@@ -1,6 +1,6 @@
 #' checkInputPath
 #' 
-#' Check if provided path exists and remove empty links
+#' Check if provided path exist and remove empty links
 #' @param paths = vector of path
 #' @param sample.ids = vector of sample ids
 checkInputPath <- function(paths = NULL, sample.ids = NULL){
@@ -41,14 +41,10 @@ getSTARLog <- function(paths = NULL, sample.ids = NULL, threads = 5){
   cl <- makeCluster(threads)
   registerDoSNOW(cl)
   clusterCall(cl, function() library(tidyverse))
-  
-  pb <- txtProgressBar(max = length(paths), style = 3)
-  progress <- function(n) setTxtProgressBar(pb, n)
-  opts <- list(progress = progress)
-  
+
   message("2. Start Reading")
   
-  STAR_stats <- foreach(i = 1:length(paths), .options.snow = opts) %dopar% {
+  STAR_stats <- foreach(i = 1:length(paths)) %dopar% {
     
     read.delim(paths[i], skip = 3, sep = "\t", header = FALSE) %>%
       dplyr::select(V2) %>%
@@ -76,7 +72,6 @@ getSTARLog <- function(paths = NULL, sample.ids = NULL, threads = 5){
       mutate(ID = sample.ids[i])
   }
   
-  close(pb)
   stopCluster(cl)
   
   # 3. Regroup
@@ -89,7 +84,7 @@ getSTARLog <- function(paths = NULL, sample.ids = NULL, threads = 5){
 
 #' getRESeQC_coverage
 #' 
-#' Get the gene coverage as measured by ReSQC.
+#' Get the gene coverage measured by ReSQC.
 #' @param sample.ids = vector of sample.ids.
 #' @param paths = vector of path/to/ReSQC_coverage.txt
 #' @param threads = Number of threads for parallel processing.
@@ -121,9 +116,6 @@ getRESeQC_coverage <- function(paths = NULL, sample.ids = NULL, threads = 10){
   
   
   geneBodyCoverage <- foreach(i = 1:length(paths), .options.snow = opts) %dopar% {
-    # Added if size > 0.
-    # Testing gene length vs coverage some file were created empty. No need to pick them for now.
-    # Remove later
     if(file.info(paths[i])$size > 0){
       data.table::fread(paths[i], header = TRUE, check.names = FALSE)[1,-1] %>%
         tidyr::as_tibble() %>%
@@ -207,10 +199,9 @@ getRESeQC_readDistribution <- function(paths = NULL, sample.ids = NULL, threads 
 #' Assumes that all the files have the same dimension (= same GTF).
 #' @param paths = vector of sample paths
 #' @param sample.ids = vector of sample ids
-#' @param mode = NULL or "downsampling". If downsampling is chosen, will attempt to compute the median number of genes detected per downsampling for each sample. Expects "ID_1", "ID_2", "ID_3", ... naming scheme to find the downsampled replicates. 
 #' @param threads = Number of threads for parallel processing (Only for reading).
 #' @param rowRange, boolean. Should you or not add rowRanges info ?
-getFeatureCount <- function(paths = NULL, sample.ids = NULL, threads = 20, mode = NULL, rowRange = TRUE){
+getFeatureCount <- function(paths = NULL, sample.ids = NULL, threads = 20, rowRange = TRUE){
   
   if(!require(Rsamtools)){BiocManager::install("SingleCellExperiment")}
   if(!require(data.table)){library("data.table")}
@@ -241,24 +232,7 @@ getFeatureCount <- function(paths = NULL, sample.ids = NULL, threads = 20, mode 
   mycounts.all <- bind_cols(geneID, mycounts.all)
   colnames(mycounts.all) <- c("gene_id", sample.ids)
   
-  # 4. Average counts in downsamplings
-  if(mode == "downsampling"){
-    message("Downsampling Average Requested - Slow Process")
-    
-    mycounts.tidy <- mycounts.all %>%
-      gather(ID, count, -gene_id) 
-    
-    # NB: Assume that the last part of the sample id is "_1" to "_100"
-    # Will get the median count for each
-    mycounts.all <- mycounts.tidy %>% head(1e6) %>%
-      mutate(replicate = str_replace(ID, paste0(paste0("_", 1:100, "$"), collapse = "|"), "")) %>%
-      group_by(gene_id, replicate) %>%
-      summarise(count.med = median(count)) %>%
-      ungroup() %>%
-      spread(replicate, count.med)
-  }
-  
-  # 5. Gene Info
+  # 4. Gene Info
   # Collapse unique chr: Some genes are located on both chrY and chrX
   if(rowRange == TRUE){ 
     message("4. Add rowRanges information")
@@ -284,76 +258,6 @@ getFeatureCount <- function(paths = NULL, sample.ids = NULL, threads = 20, mode 
   
 }
 
-
-#' getHTSeq
-#' 
-#' Get the gene count from HTSeq data.
-#' Assumes that all the files have the same dimension (= same GTF).
-#' @param sample.id = ID of the sample
-#' @param path = path/to/STAR/htseq.txt
-#' @param mode = NULL or "downsampling". If downsampling is chosen, will attempt to compute the median number of genes detected per downsampling for each sample. Expects "ID_1", "ID_2", "ID_3", ... naming scheme to find the downsampled replicates. 
-#' @param path = path/to/file.gtf. The GTF used to create these files. 
-#' @param threads = Number of threads for parallel processing (Only for reading).
-getHTSeq <- function(path = NULL, sample.id = NULL, gtf = NULL, threads = 20){
-  
-  
-  if(!require(Rsamtools)){BiocManager::install("SingleCellExperiment")}
-  if(!require(data.table)){library("data.table")}
-  suppressPackageStartupMessages(library(tidyverse))
-  suppressPackageStartupMessages(library(doParallel))
-  if(threads >= detectCores()){stop("Requested too many cores")}
-  
-  # 1. Check if provided paths exist
-  trueFiles <- checkInputPath(paths, sample.ids)
-  paths <- trueFiles$paths
-  sample.ids <- trueFiles$sample.ids
-  
-  # 2. Read All Files in Parallel
-  geneID <- data.table::fread(paths[1], header = FALSE, select = 1, sep = "\t")
-  
-  cl <- makeCluster(threads)
-  registerDoParallel(cl)
-  mycounts.all <- foreach(i = 1:length(paths)) %dopar% {
-    data.table::fread(paths[i], header = FALSE, select = 2, sep = "\t")
-  }
-  stopCluster(cl)
-  
-  # 3. Regroup
-  mycounts.all <- bind_cols(mycounts.all)
-  mycounts.all <- bind_cols(geneID, mycounts.all)
-  colnames(mycounts.all) <- c("gene_id", sample.ids)
-  
-  mycounts.all <- mycounts.all[1:(grep("__no_feature", mycounts.all$gene_id)-1),]
-  
-  
-  # 4. Average counts in downsamplings
-  if(mode == "downsampling"){
-    message("Downsampling Average Requested - Slow Process")
-    
-    mycounts.tidy <- mycounts.all %>%
-      gather(ID, count, -gene_id) 
-    
-    # NB: Assume that the last part of the sample id is "_1" to "_100"
-    # Will get the median count for each
-    mycounts.all <- mycounts.tidy %>% head(1e6) %>%
-      mutate(replicate = str_replace(ID, paste0(paste0("_", 1:100, "$"), collapse = "|"), "")) %>%
-      group_by(gene_id, replicate) %>%
-      summarise(count.med = median(count)) %>%
-      ungroup() %>%
-      spread(replicate, count.med)
-  }
-  
-  # 5. Gene Info
-  # Collapse unique chr: Some genes are located on both chrY and chrX
-  gtf <- rtracklayer::import(gtf)
-  
-  # 6. Returns a SingleCellExperiment object
-  sce <- SingleCellExperiment::SingleCellExperiment(assays = list(counts = data.frame(mycounts.all[,-1], row.names = mycounts.all$gene_id)),
-                                                    rowRanges = gtf)
-  
-  return(sce)
-  
-}
 
 #' getUMICounts
 #' 
@@ -458,6 +362,7 @@ sceToExpressedGenes <- function(sce = NULL, thresholds = c(0,1,5), salmon = FALS
           mutate(ID = colnames(tpm)))
     }
   }
+  
   # 4. Regroup data
   message("Regroup All")
   med.count <- purrr::reduce(med.count, left_join, by = "ID")
