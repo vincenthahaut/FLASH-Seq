@@ -93,7 +93,6 @@ while IFS=$'\t' read -r -a myArray; do
 	cat FASTQ/umi.R1.fq FASTQ/internal.R1.fq > FASTQ/allreads.R1.fq
 
 	# 2. Remove leftover of adapters
-        # Remove F/R sequencing adapters
   	# t = threads
 	# ktrim = right and left
 	# rcomp=f only look for the forward sequence not reverse

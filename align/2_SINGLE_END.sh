@@ -45,10 +45,6 @@ while IFS=$'\t' read -r -a myArray; do
 	cat *fastq.gz > sample.fastq.gz
 
 	# 2. Trim Reads
-	# The following oligos have been added to the adapters.fa reference 
-   	# https://teichlab.github.io/scg_lib_structs/methods_html/SMART-seq_family.html
-    	# SS2/FS: AAGCAGTGGTATCAACGCAGAGT, GGTATCAACGCAGAGTACATGGG
-    	# SS3: ACGAGCATCAGCAGCATACGA, AGAGACAGATTGCGCAATG
 	if echo "$ID" | grep -q "SS3"
 	then
 	#### Remove UMI from 5'UMI reads from SS3 data and add them to the read name
