@@ -7,14 +7,14 @@ OUT="/home/vincent.hahaut/data_storage/210617_NB551561_0051_AHTYJYAFX2/STAR/"
 IN="/home/vincent.hahaut/data_storage/210617_NB551561_0051_AHTYJYAFX2/"
 
 # 2. REFERENCES
-STAR_REF="/home/vincent.hahaut/data_storage/REFERENCES/hsap_fastsmart/STAR/"
-# STAR_REF="/home/vincent.hahaut/data_storage/REFERENCES/hsap_fastsmart/STAR_100bp/"	# To use when dealing with 100 bp reads
-GTF="/home/vincent.hahaut/data_storage/REFERENCES/hsap_fastsmart/REFERENCE/GTF/gencode.v34.primary_assembly.annotation.gtf"
-GTF_CODING="/home/vincent.hahaut/data_storage/REFERENCES/hsap_fastsmart/REFERENCE/GTF/gencode.v34.primary_assembly.annotation.protein_coding.gtf"
-GTF_EXON_CODING="/home/vincent.hahaut/data_storage/REFERENCES/hsap_fastsmart/REFERENCE/GTF/gencode.v34.exons.gtf"
-GTF_INTRON_CODING="/home/vincent.hahaut/data_storage/REFERENCES/hsap_fastsmart/REFERENCE/GTF/gencode.v34.coding.introns.gtf"
-ReSQCBED="/home/vincent.hahaut/data_storage/REFERENCES/hsap_fastsmart/REFERENCE/BED/hg38_UCSC_gencodeV34.ReSQCBED.bed"
-BBDUK_REF="/home/vincent.hahaut/data_storage/REFERENCES/hsap_fastsmart/REFERENCE/BBDUK/adapters.fa"
+STAR_REF="/home/vincent.hahaut/data_storage/REFERENCES/hsap_flashseq/STAR/"
+# STAR_REF="/home/vincent.hahaut/data_storage/REFERENCES/hsap_flashseq/STAR_100bp/"	# To use when dealing with 100 bp reads
+GTF="/home/vincent.hahaut/data_storage/REFERENCES/hsap_flashseq/REFERENCE/GTF/gencode.v34.primary_assembly.annotation.gtf"
+GTF_CODING="/home/vincent.hahaut/data_storage/REFERENCES/hsap_flashseq/REFERENCE/GTF/gencode.v34.primary_assembly.annotation.protein_coding.gtf"
+GTF_EXON_CODING="/home/vincent.hahaut/data_storage/REFERENCES/hsap_flashseq/REFERENCE/GTF/gencode.v34.exons.gtf"
+GTF_INTRON_CODING="/home/vincent.hahaut/data_storage/REFERENCES/hsap_flashseq/REFERENCE/GTF/gencode.v34.coding.introns.gtf"
+ReSQCBED="/home/vincent.hahaut/data_storage/REFERENCES/hsap_flashseq/REFERENCE/BED/hg38_UCSC_gencodeV34.ReSQCBED.bed"
+BBDUK_REF="/home/vincent.hahaut/data_storage/REFERENCES/hsap_flashseq/REFERENCE/BBDUK/adapters.fa"
 
 # 3. BINARIES
 STAR="/home/vincent.hahaut/binaries/STAR-2.7.3a/bin/Linux_x86_64/STAR"

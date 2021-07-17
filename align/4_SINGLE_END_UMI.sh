@@ -6,12 +6,12 @@ OUT="/home/vincent.hahaut/data_storage/210322_NB551561_0044_AHNTL2AFX2/STAR/"
 IN="/home/vincent.hahaut/data_storage/210322_NB551561_0044_AHNTL2AFX2/"
 
 # REFERENCES
-#STAR_REF="/home/vincent.hahaut/data_storage/REFERENCES/hsap_fastsmart/STAR/"
-STAR_REF="/home/vincent.hahaut/data_storage/REFERENCES/hsap_fastsmart/STAR_100bp/" # To use whith 100 bp reads
-GTF="/home/vincent.hahaut/data_storage/REFERENCES/hsap_fastsmart/REFERENCE/GTF/gencode.v34.primary_assembly.annotation.gtf"
-ReSQCBED="/home/vincent.hahaut/data_storage/REFERENCES/hsap_fastsmart/REFERENCE/BED/hg38_UCSC_gencodeV34.ReSQCBED.bed"
-BBDUK_REF="/home/vincent.hahaut/data_storage/REFERENCES/hsap_fastsmart/REFERENCE/BBDUK/adapters.fa"
-GTF_EXONINTRON="/home/vincent.hahaut/data_storage/REFERENCES/hsap_fastsmart/REFERENCE/GTF/gencode.v34.exonsANDintrons.gtf"
+#STAR_REF="/home/vincent.hahaut/data_storage/REFERENCES/hsap_flashseq/STAR/"
+STAR_REF="/home/vincent.hahaut/data_storage/REFERENCES/hsap_flashseq/STAR_100bp/" # To use whith 100 bp reads
+GTF="/home/vincent.hahaut/data_storage/REFERENCES/hsap_flashseq/REFERENCE/GTF/gencode.v34.primary_assembly.annotation.gtf"
+ReSQCBED="/home/vincent.hahaut/data_storage/REFERENCES/hsap_flashseq/REFERENCE/BED/hg38_UCSC_gencodeV34.ReSQCBED.bed"
+BBDUK_REF="/home/vincent.hahaut/data_storage/REFERENCES/hsap_flashseq/REFERENCE/BBDUK/adapters.fa"
+GTF_EXONINTRON="/home/vincent.hahaut/data_storage/REFERENCES/hsap_flashseq/REFERENCE/GTF/gencode.v34.exonsANDintrons.gtf"
 
 # BINARIES
 STAR="/home/vincent.hahaut/binaries/STAR-2.7.3a/bin/Linux_x86_64/STAR"
