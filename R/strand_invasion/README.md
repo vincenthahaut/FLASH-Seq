@@ -1,6 +1,6 @@
 # Strand Invasion Detection
 
-## The procedure used to explore strand-invasion events contains three steps:
+**The procedure used to explore strand-invasion events contains three steps:**
 
 1. Create a GTF file containing the collapsed exon-intron positions of protein-coding genes using **0_Create_ExonIntron_Reference.R**.
 
@@ -8,9 +8,9 @@
 
 3. Parse the annotated BAM files uisng **1_strand_invasion_detection.R** to deduplicate UMI reads and extract the sequence adjacent to the read start.
 
-## Notes regarding 1_strand_invasion_detection.R:
+**Notes regarding 1_strand_invasion_detection.R**
 
-* This script is not designed to remove putative invasion events. However, it will provide an overview of such events.
+* **GOAL:** This script is not designed to remove putative invasion events. However, it will provide an overview of such events.
 
 * It is currently quite slow as it contains a lot of unecessary check-ups which were placed to explore the results. 
 
@@ -26,5 +26,6 @@ Please note that outputs using zUMIs BAMs will not be compatible with my scripts
 
 * The script contains some hardcoded values for the human genome (e.g., chromosome number) and FLASH-Seq (e.g., spacer, ...). 
 
+* Two bam files produced using zUMIs (HEK and HCA) are provided as example.
 
 
