@@ -172,6 +172,7 @@ getDownstreamSeq <- function(mybam = NULL, myid = NULL, METHOD = NULL, genome = 
       umi <- as.character(substr(collapsed$UMI, 1+i, 8))
       umi.sp <- as.character(substr(collapsed$UMI.spacer, 1+i, unique(nchar(collapsed$UMI.spacer))))
       
+      
       matches.umi <- mapply(function(x,y) grepl(x, y), umi, collapsed$upstream)
       matches.spa <- mapply(function(x,y) grepl(x, y), umi.sp, collapsed$upstream)
       #
@@ -192,21 +193,10 @@ getDownstreamSeq <- function(mybam = NULL, myid = NULL, METHOD = NULL, genome = 
     }
     
     # 9. Strand Invasion does not waited the UMI to occur. GGG is often enough
-    collapsed$index <- 1:nrow(collapsed)
-    motif.pos <- collapsed[collapsed$READ_STRAND == "+",]
-    motif.neg <- collapsed[collapsed$READ_STRAND == "-",]
+    motif <- substr(collapsed$upstream, 18,20)
+    collapsed$GGG <- motif == "GGG"
     
-    motif.pos$GGG <- substr(motif.pos$upstream, 18,20)
-    motif.neg$GGG <- substr(as.character(Biostrings::complement(Biostrings::DNAStringSet(motif.neg$upstream))), 18,20)
-    
-    motifs <- bind_rows(select(motif.pos, GGG, index),
-              select(motif.neg, GGG, index)) %>%
-      mutate(val = GGG == "GGG") %>%
-      arrange(index)
-    
-    collapsed$GGG <- motifs$val
-
-    collapsed$PERCENTAGE_MATCH.GGG <- 100 * sum(motifs$val) / nrow(collapsed)
+    collapsed$PERCENTAGE_MATCH.GGG <- 100 * sum(motif == "GGG") / nrow(collapsed)
     
     # 10. Add Groups
     collapsed <-  mutate(collapsed, GROUP = case_when(grepl("5_SS3|6_SS3", ID) ~ "SS3",
