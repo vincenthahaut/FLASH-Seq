@@ -18,8 +18,6 @@ BBDUK_REF="/home/vincent.hahaut/data_storage/REFERENCES/hsap_flashseq/REFERENCE/
 
 # 3. BINARIES
 STAR="/home/vincent.hahaut/binaries/STAR-2.7.3a/bin/Linux_x86_64/STAR"
-BBDUK="/home/vincent.hahaut/data_storage/binaries/bbmap/bbduk.sh"
-BBSPLIT="/home/vincent.hahaut/data_storage/binaries/bbmap/bbsplit.sh"
 BBMAP_filter="/home/vincent.hahaut/data_storage/binaries/bbmap/filterbyname.sh"
 
 # 4. Run the pipeline for every sample

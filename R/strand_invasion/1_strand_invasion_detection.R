@@ -5,7 +5,8 @@
 #' @param myid, sample ID
 #' @param METHOD, FLASH-Seq or zUMIs depending on the pre-processing steps
 #' @param genome, Loaded BSgenome file
-getDownstreamSeq <- function(mybam = NULL, myid = NULL, METHOD = NULL, genome = genome){
+#' @param minReads, minimum number of reads to analyse the sample
+getDownstreamSeq <- function(mybam = NULL, myid = NULL, METHOD = NULL, genome = genome, minReads = 5000){
   
   message(paste0("ID: ", myid))
   message("Read BAM File")
@@ -25,6 +26,11 @@ getDownstreamSeq <- function(mybam = NULL, myid = NULL, METHOD = NULL, genome = 
         as.numeric() %>%
         sum())
     
+    # Saw one sample with no read associated to an exon tag (GE) - crashed the script
+    if(any(sapply(bam[[1]]$tag, length) == 0)){
+      bam[[1]]$tag <- lapply(bam[[1]]$tag, function(x) if(length(x) == 0) rep(NA, length(bam[[1]]$qname)) else x)
+    }
+           
     gr <- makeGRangesFromDataFrame(
       data.frame(
         seqnames = bam[[1]]$rname,
@@ -79,7 +85,7 @@ getDownstreamSeq <- function(mybam = NULL, myid = NULL, METHOD = NULL, genome = 
   gr <- gr[gr$mapq > 5]
   gr <- gr[seqnames(gr) %in% paste0("chr", 1:22)]
   
-  if(length(gr) > 0){
+  if(length(gr) > minReads){
     # 3. Get the sequence adjacent of the read start
     # 20bp before to account for potential mapping issues, long GGG's stretches created by the RT or longer spacer sequences.
     message("Get Upstream Sequences")

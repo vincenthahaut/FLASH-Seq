@@ -29,3 +29,4 @@ Please note that outputs using zUMIs BAMs will not be compatible with my scripts
 
 * I am aware that 1_strand_invasion_detection.R is currently quite slow. Improvments can still be made to parallelise a lot of the internal parts. 
 
+

@@ -15,8 +15,6 @@ GTF_EXONINTRON="/home/vincent.hahaut/data_storage/REFERENCES/hsap_flashseq/REFER
 
 # BINARIES
 STAR="/home/vincent.hahaut/binaries/STAR-2.7.3a/bin/Linux_x86_64/STAR"
-BBDUK="/home/vincent.hahaut/data_storage/binaries/bbmap/bbduk.sh"
-TRACER="/home/vincent.hahaut/data_storage/binaries/tracer/tracer"
 BBMAP_filter="/home/vincent.hahaut/data_storage/binaries/bbmap/filterbyname.sh"
 
 mkdir "$OUT"
