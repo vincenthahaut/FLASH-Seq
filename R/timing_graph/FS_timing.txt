@@ -1,0 +1,54 @@
+Step	METHOD	duration
+Start	SS2	0
+Start	SS3	0
+Start	FS	0
+Start	FS-LA	0
+Start	SSsc	0
+Denature	SS2	3.5
+RT	SS2	154
+PCR	SS2	153
+Clean-up	SS2	45
+QC	SS2	45
+Dilution	SS2	20
+Tagmentation	SS2	27
+Library Amplification	SS2	25
+Clean-up	SS2	45
+QC	SS2	45
+Library Pooling	SS2	30
+Denature	SS3	11
+RT	SS3	148
+PCR	SS3	115
+Clean-up	SS3	45
+QC	SS3	45
+Dilution	SS3	20
+Tagmentation	SS3	27
+Library Amplification	SS3	27.5
+Clean-up	SS3	30
+QC	SS3	45
+Library Pooling	SS3	30
+Denature	FS	3
+RT-PCR	FS	208
+Clean-up	FS	45
+QC	FS	45
+Dilution	FS	20
+Tagmentation	FS	27
+Library Amplification	FS	25
+Pooling and Clean-up	FS	30
+QC	FS	30
+Denature	FS-LA	3.5
+RT-PCR	FS-LA	157
+Tagmentation	FS-LA	27
+Library Amplification	FS-LA	30
+Pooling and Clean-up	FS-LA	30
+QC	FS-LA	30
+Denature	SSsc	3.5
+RT	SSsc	209
+PCR	SSsc	84
+Clean-up	SSsc	45
+QC	SSsc	45
+Dilution	SSsc	20
+Tagmentation	SSsc	55
+Library Amplification	SSsc	30
+Clean-up	SSsc	45
+QC	SSsc	45
+Library Pooling	SSsc	30

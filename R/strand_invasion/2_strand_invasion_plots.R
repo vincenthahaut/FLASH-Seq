@@ -80,7 +80,7 @@ ggsave(p.intron, filename = paste0(prefix, "intron_exon_UMI.tiff"), dpi= 300, he
 
 # 3. Strand Invasion %
 
-# 3.1. Reformat the data for the plot
+# 3.1. Reformat the data for the graphics
 dat <- res.annotated.final %>%
   filter(GROUP != "zUMIs - SS3\nHagemann-J.") %>% 
   select(PERCENTAGE_MATCH, PERCENTAGE_MATCH.1, PERCENTAGE_MATCH.2, PERCENTAGE_MATCH.3, PERCENTAGE_MATCH.G, PERCENTAGE_MATCH.1.G, PERCENTAGE_MATCH.2.G, PERCENTAGE_MATCH.3.G, ID, GROUP) %>%
