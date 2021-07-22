@@ -103,8 +103,8 @@ while IFS=$'\t' read -r -a myArray; do
 	$BBDUK -Xmx48g in=FASTQ/allreads.R1.fq out=FASTQ/allreads.R1.2.fq t=32 ktrim=r ref="$BBDUK_REF" k=23 minlength=60 mink=10 hdist=1
 	$BBDUK -Xmx48g in=FASTQ/allreads.R1.2.fq out=FASTQ/allreads.R1.trim.fq t=32 ktrim=l ref="$BBDUK_REF" k=23 minlength=60 mink=10 hdist=1
 
-  	$BBDUK -Xmx48g in=FASTQ/umi.R1.fq out=FASTQ/umi.R1.2.fq t=32 ktrim=r ref="$BBDUK_REF" k=18 minlength=40 mink=10 hdist=1
-	$BBDUK -Xmx48g in=FASTQ/umi.R1.2.fq out=FASTQ/umi.R1.trim.fq t=32 ktrim=l ref="$BBDUK_REF" k=18 minlength=40 mink=10 hdist=1
+  	$BBDUK -Xmx48g in=FASTQ/umi.R1.fq out=FASTQ/umi.R1.2.fq t=32 ktrim=r ref="$BBDUK_REF" k=18 minlength=50 mink=10 hdist=1
+	$BBDUK -Xmx48g in=FASTQ/umi.R1.2.fq out=FASTQ/umi.R1.trim.fq t=32 ktrim=l ref="$BBDUK_REF" k=18 minlength=50 mink=10 hdist=1
 
   	$BBDUK -Xmx48g in=FASTQ/internal.R1.fq out=FASTQ/internal.R1.2.fq t=32 ktrim=r ref="$BBDUK_REF" k=23 minlength=60 mink=10 hdist=1
 	$BBDUK -Xmx48g in=FASTQ/internal.R1.2.fq out=FASTQ/internal.R1.trim.fq t=32 ktrim=l ref="$BBDUK_REF" k=23 minlength=60 mink=10 hdist=1
