@@ -6,7 +6,7 @@ This repository contains the scripts related to the analysis of the FLASH-Seq da
 
 If something is still missing please just contact me !
 
-## Folder description:
+## Folder Architecture:
 
 ```
 * pre-processing
@@ -22,6 +22,7 @@ If something is still missing please just contact me !
 * experimental
 ```
 
+## Folder Description:
 
 * pre-processing
 	* Demultiplexing, mapping, counting, 10x genomics, ...
