@@ -1,13 +1,10 @@
 
 ## Main analysis
 
-1_strand_invasion.Rmd
-2_TSO-UMI_analysis.Rmd
+1. **1_strand_invasion.Rmd**: Explore UMI invasion events.
 
-## oligonucleotide_frequency.R
+2. **2_TSO-UMI_analysis.Rmd**: Properties of UMI reads (counts, read distribution, ...).
 
-Script to explore the frequency of spacer (w/ or w/o -GGG) in a genome / transcriptome.
+3. **oligonucleotide_frequency.R**: explore the frequency of spacer (w/ or w/o -GGG) in a genome / transcriptome.
 
-## filterInvasionEventsfromBAM.R
-
-Filter out reads with a UMI displaying a match with the sequence upstream of the mapping position. 
+4. **filterInvasionEventsfromBAM.R**: Filter out reads with a UMI matching with the sequence upstream of the mapping position. 
