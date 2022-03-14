@@ -8,6 +8,7 @@ If something is still missing please just contact me !
 
 ## Folder description:
 
+```
 * pre-processing
 * UMI_in_R2
 * variant_calling
@@ -19,6 +20,7 @@ If something is still missing please just contact me !
 	- timing_graph
 	- w18_organoids
 * experimental
+```
 
 
 * pre-processing
@@ -28,7 +30,7 @@ If something is still missing please just contact me !
 * variant_calling
 * R/UMI_and_strandInvasion
 	* Scripts related to the strand-invasion analysis.
-	* filterInvasionEventsfromBAM.R: script to remove suspected strand-invasion events.
+	* filterInvasionEventsfromBAM.R: remove suspected strand-invasion events from BAM file.
 * R/archive_first_draft_to_keep
 	* Legacy code used in the first draft. 
 * R/extended_files
