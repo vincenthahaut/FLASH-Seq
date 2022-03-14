@@ -8,27 +8,17 @@ If something is still missing please just contact me !
 
 ## Folder description:
 
-├── pre-processing
-
-├── UMI_in_R2
-
-├── variant_calling
-
-├── R
-
-	├── UMI_and_strandInvasion
-
+  └──pre-processing
+  └──UMI_in_R2
+  └──variant_calling
+  └──R
+│   ├── UMI_and_strandInvasion
 	├── archive_first_draft_to_keep
-
 	├── extended_files
-
 	├── general
-
 	├── timing_graph
-
 	├── w18_organoids
-
-├── experimental
+  └──experimental
 
 
 * pre-processing
