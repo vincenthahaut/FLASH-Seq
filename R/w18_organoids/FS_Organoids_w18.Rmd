@@ -1,0 +1,1829 @@
+---
+title: "w18 Organoids - FS"
+author: "V. Hahaut, D. Pavlinic & S. Picelli"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: html_document
+---
+
+```{r LIBRARIES, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
+
+# Load Packages / prerequists
+suppressPackageStartupMessages(library(Seurat))
+suppressPackageStartupMessages(library(SeuratWrappers))
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(cowplot))
+
+# Define colors
+mycolors <- as.vector(c(yarrr::piratepal(palette = "basel"), 
+                        yarrr::piratepal(palette = "info"), 
+                        yarrr::piratepal(palette = "pony"), 
+                        yarrr::piratepal(palette = "eternal"), 
+                        yarrr::piratepal(palette = "espresso")))
+
+celltype.colors <- function(){c(
+"Photoreceptor/Bipolar Fate"="#990000",
+"Rods"="#15983DFF",
+"Cone Fate"="#EC579AFF",
+"Müller Fate"="#FA6B09FF",
+"Müller Cells"="#149BEDFF",
+# "Bipolar Fate"="#A1C720FF",
+"Amacrine Fate"="#0ff1ce",
+"Bipolar Cells (OFF)"="#FEC10BFF",
+"Bipolar Cells (ON)"="#16A08CFF",
+"Amacrine Cells (GABA)"="#9A703EFF",
+"Horizontal Cells"= "#F5BACFFF",
+"Amacrine/Horizontal Fate"="#6B8993FF",
+"Glia"="#F6F0D4FF",
+"Proliferating Cells"="#95CE8AFF",
+"Apoptotic Cells"= "#1f72b0",
+"Cones"="#94D4D4FF",
+"Rod Fate" = "#dda060",
+"Photoreceptor Fate" = "#F1F3E8FF")}
+
+# 3. Mitochondria
+gtf <- as.data.frame(rtracklayer::import("/home/vincent.hahaut/data_storage/REFERENCES/hsap_fastsmart/REFERENCE/GTF/gencode.v34.primary_assembly.annotation.gtf"))
+mitochondrial.gene <- gtf$gene_name[gtf$seqnames == "chrM"] %>% unique()
+```
+
+```{FS - Aggregate Files, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
+
+options(scipen=999)
+source("/home/vincent.hahaut/Desktop/FLASH-Seq/R/general/4_aggregate_files_functions.R")
+seqPaths <- c("/home/vincent.hahaut/data_storage/ORGANOIDS/STAR/")
+
+# 1. Aggregate info
+mydate <- Sys.Date()
+
+# 1.0. All Reads - featurecounts
+paths.featurecounts <- makePath(seqPaths = seqPaths, suffix = "FEATURECOUNTS/ID_ALL_featureCounts.gencode.EXON.txt")
+featurecounts.exon <- getFeatureCount(paths = paths.featurecounts$paths, sample.ids = paths.featurecounts$sample.ids, threads = 10)
+write_rds(featurecounts.exon, file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_featureCounts.exons.all.", mydate, ".rds"))
+
+# 1.1. Exon Internal - featurecounts
+paths.featurecounts <- makePath(seqPaths = seqPaths, suffix = "FEATURECOUNTS/ID_INTERNAL_featureCounts.gencode.EXON.txt")
+featurecounts.exon <- getFeatureCount(paths = paths.featurecounts$paths, sample.ids = paths.featurecounts$sample.ids, threads = 10)
+write_rds(featurecounts.exon, file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_featureCounts.exons.internal.", mydate, ".rds"))
+
+# 1.2. Exon Internal downsample - featurecounts
+# Same sequencing depth as average 10x
+ids <- list.files("/home/vincent.hahaut/data_storage/ORGANOIDS/STAR/")
+paths.featurecounts <- sapply(c(33800), function(x) paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/STAR/", ids, "/DOWNSAMPLE/DOWN_", x, "/FEATURECOUNTS/", ids, "_INTERNAL_", x, ".feature.EXON.txt"))
+feature.ids <- paste0(str_split(paths.featurecounts, "/", simplify = TRUE)[,7], "_", str_replace(str_split(paths.featurecounts, "/", simplify = TRUE)[,9], "DOWN_", ""))
+#
+featurecounts.exon <- getFeatureCount(paths = paths.featurecounts, sample.ids = feature.ids, threads = 10)
+write_rds(featurecounts.exon, file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_featureCounts.exons.internal.33800.", mydate, ".rds"))
+
+# 1.3. Exon UMI counts
+paths.umi.counts <- makePath(seqPaths = seqPaths, suffix = "FEATURECOUNTS/ID.umi.counts.tsv.gz")
+umi.exon <- getUMICounts(paths = paths.umi.counts$paths, sample.ids = paths.umi.counts$sample.ids)
+write_rds(umi.exon, file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_umiCounts.exons.", mydate, ".rds"))
+
+# 1.4 . Exon UMI downsample counts
+# Same sequencing depth as average 10x
+ids <- list.files("/home/vincent.hahaut/data_storage/ORGANOIDS/STAR/")
+paths.umi.counts <- sapply(c(33800), function(x) paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/STAR/", ids, "/DOWNSAMPLE/DOWN_", x, "/FEATURECOUNTS/", ids, ".umi.counts.", x ,".tsv.gz"))
+umi.ids <- paste0(str_split(paths.umi.counts, "/", simplify = TRUE)[,7], "_", str_replace(str_split(paths.umi.counts, "/", simplify = TRUE)[,9], "DOWN_", ""))
+#
+umi.down.ex <- getUMICounts(paths = paths.umi.counts, sample.ids = umi.ids)
+write_rds(umi.down.ex, file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_umiCounts.exons.33800.", mydate, ".rds.bz"), compress = "bz")
+
+# 1.5. Mapping infos - UMI
+paths.STAR.log.umi <- makePath(seqPaths = seqPaths, suffix = "STAR/ID_UMI_Log.final.out")
+STAR.log <- getSTARLog(paths = paths.STAR.log.umi$paths, sample.ids = paths.STAR.log.umi$sample.ids, threads = 10)
+write_rds(STAR.log, file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_STAR.logs.umi.", mydate, ".rds"))
+
+# 1.6. Mapping infos - INTERNAL
+paths.STAR.log.internal <- makePath(seqPaths = seqPaths, suffix = "STAR/ID_INTERNAL_Log.final.out")
+STAR.log <- getSTARLog(paths = paths.STAR.log.internal$paths, sample.ids = paths.STAR.log.internal$sample.ids, threads = 10)
+write_rds(STAR.log, file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_STAR.logs.internal.", mydate, ".rds"))
+
+# 1.7. ReSQC - read distribution - UMI
+paths.ReSQC.distr <- makePath(seqPaths = seqPaths, suffix = "ReSQC/ID_UMI_readDistribution.txt")
+ReSQC.distr <- getRESeQC_readDistribution(paths = paths.ReSQC.distr$paths, sample.ids = paths.ReSQC.distr$sample.ids, threads = 10)
+write_rds(ReSQC.distr, file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_ReSQC.distribution.umi.", mydate, ".rds"))
+
+# 1.8. ReSQC - read distribution - INTERNAL
+paths.ReSQC.distr <- makePath(seqPaths = seqPaths, suffix = "ReSQC/ID_INTERNAL_readDistribution.txt")
+ReSQC.distr <- getRESeQC_readDistribution(paths = paths.ReSQC.distr$paths, sample.ids = paths.ReSQC.distr$sample.ids, threads = 10)
+write_rds(ReSQC.distr, file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_ReSQC.distribution.internal.", mydate, ".rds"))
+
+# 1.9. Salmon ALL
+salmon.path <- makePath(seqPaths = seqPaths, suffix = "STAR/ID_salmon_ALL_TRANSCRIPTS/quant.sf")
+salmon <- getSalmon(paths = salmon.path$paths, sample.ids = salmon.path$sample.ids, gtf = "/home/vincent.hahaut/data_storage/REFERENCES/hsap_fastsmart/REFERENCE/GTF/gencode.v34.primary_assembly.annotation.gtf", txOUT = TRUE, scaling = "lengthScaledTPM")
+write_rds(salmon, file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_salmon.all.", mydate, ".rds"))
+
+```
+
+```{r read results, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
+mydate <- "2021-12-11"
+
+# 1. Mapping Statistics
+STAR.log.umi <- read_rds(file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_STAR.logs.umi.", mydate, ".rds"))
+STAR.log.internal <- read_rds(file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_STAR.logs.internal.", mydate, ".rds"))
+
+# Cells that will be retained
+index <- as.vector(filter(STAR.log.internal, as.numeric(P_uniquely_mapped_reads) > 60 & as.numeric(P_too_short_read) < 20 & as.numeric(N_raw_reads) > 100000)$ID)  
+
+# 2. Load the Data
+featurecounts.all <- read_rds(file =paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_featureCounts.exons.all.", mydate, ".rds"))
+featurecounts.exon <- read_rds(file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_featureCounts.exons.internal.", mydate, ".rds"))
+featurecounts.exon.down <- read_rds(file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_featureCounts.exons.internal.33800.", mydate, ".rds"))
+umi.exon <- read_rds(file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_umiCounts.exons.", mydate, ".rds"))
+umi.exon.down <- read_rds(file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_umiCounts.exons.33800.", mydate, ".rds.bz"))
+ReSQC.distr.umi <- read_rds(file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_ReSQC.distribution.umi.", mydate, ".rds"))
+ReSQC.distr.internal <- read_rds(file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_ReSQC.distribution.internal.", mydate, ".rds"))
+salmon.all <- read_rds(file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_salmon.all.", mydate, ".rds"))
+
+# 3. Remove low quality cells
+featurecounts.all <- featurecounts.all[,colnames(featurecounts.all) %in% paste0("X", str_replace(index, "-", "\\."))]
+featurecounts.exon <- featurecounts.exon[,colnames(featurecounts.exon) %in% paste0("X", str_replace(index, "-", "\\."))]
+featurecounts.exon.down <- featurecounts.exon.down[,str_replace(colnames(featurecounts.exon.down), "_([^_]+$)", "") %in% paste0("X", str_replace(index, "-", "\\."))]
+umi.exon <- umi.exon[,colnames(umi.exon) %in% index]
+umi.exon.down <- umi.exon.down[,str_replace(colnames(umi.exon.down), "_([^_]+$)", "") %in% index]
+ReSQC.distr.umi <- ReSQC.distr.umi[ReSQC.distr.umi$ID %in% index,]
+ReSQC.distr.internal <- ReSQC.distr.internal[ReSQC.distr.internal$ID %in% index,]
+salmon.all <- salmon.all[,colnames(salmon.all) %in% index]
+STAR.log.umi <- STAR.log.umi[STAR.log.umi$ID %in% index,]
+STAR.log.internal <- STAR.log.internal[STAR.log.internal$ID %in% index,]
+```
+
+```{r Process data, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
+
+source("~/Desktop/FLASH-Seq/R/general/6_SingleCell_functions.R")
+library(Seurat)
+
+# 1. List of genes to filter out
+unwanted <- gtf %>% filter(gene_type %in% c("rRNA_pseudogene", "rRNA", "Mt_rRNA") | grepl("^RPL|^RPS|MALAT1", gene_name)) %>% dplyr::select(gene_name, transcript_id) %>% pivot_longer(cols = c(gene_name, transcript_id)) %>% dplyr::select(value) %>% distinct()
+
+# 2. Process the data
+ssce.FS.internal <- basicSeurat(
+  Seurat::CreateSeuratObject(counts = counts(featurecounts.exon)[!row.names(featurecounts.exon) %in% unwanted$value,]), 
+  rv.th = 2.5, nfeatures = NULL, npcs = 15, SCT = TRUE, resolution = 1.8, var.to.regress = "nCount_RNA")
+markers.internal <- FindAllMarkers(ssce.FS.internal, test.use = "MAST", logfc.threshold = 0.5, only.pos = TRUE)
+write_rds(ssce.FS.internal, "/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.internal.ssce.rds")
+write.table(markers.internal, sep = "\t", "/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.internal.markers.txt", row.names = FALSE, quote = FALSE)
+
+ssce.FS.umi <- basicSeurat(
+  Seurat::CreateSeuratObject(counts = counts(umi.exon)[!row.names(umi.exon) %in% unwanted$value,]), 
+  rv.th = 2.5, nfeatures = NULL, npcs = 12, SCT = TRUE, resolution = 2, var.to.regress = "nCount_RNA")
+markers.umi <- FindAllMarkers(ssce.FS.umi, test.use = "MAST", logfc.threshold = 0.5, only.pos = TRUE)
+write_rds(ssce.FS.umi, "/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.umi.ssce.rds")
+write.table(markers.umi, sep = "\t", "/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.umi.markers.txt", row.names = FALSE, quote = FALSE)
+
+ssce.FS.all <- basicSeurat(
+  Seurat::CreateSeuratObject(counts = counts(featurecounts.all)[!row.names(featurecounts.all) %in% unwanted$value,]), 
+  rv.th = 5, nfeatures = NULL, npcs = 12, SCT = TRUE, resolution = 1.5, var.to.regress = "nCount_RNA")
+markers.all <- FindAllMarkers(ssce.FS.all, test.use = "MAST", logfc.threshold = 0.5, only.pos = TRUE)
+write_rds(ssce.FS.all, "/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.all.ssce.rds")
+write.table(markers.all, sep = "\t", "/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.all.markers.txt", row.names = FALSE, quote = FALSE)
+
+
+# 3. Choise the right PCA values
+plot_grid(nrow = 1, 
+          ElbowPlot(ssce.FS.internal, ndims = 40) + geom_hline(yintercept = 5), 
+          ElbowPlot(ssce.FS.umi, ndims = 40) + geom_hline(yintercept = 5),
+          ElbowPlot(ssce.FS.all, ndims = 40) + geom_hline(yintercept = 5))
+
+# 4. Visualize
+plot_grid(ncol = 3,
+  DimPlot(ssce.FS.all, group.by = "seurat_clusters", cols = mycolors),
+  DimPlot(ssce.FS.internal, group.by = "seurat_clusters", cols = mycolors),
+  DimPlot(ssce.FS.umi, group.by = "seurat_clusters", cols = mycolors))
+
+```
+
+```{r get cell types, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
+
+# 1. Read
+markers.internal <- read_tsv("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.internal.markers.txt")
+markers.umi <- read_tsv("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.umi.markers.txt")
+markers.all <- read_tsv("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.all.markers.txt")
+ssce.FS.internal <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.internal.ssce.rds")
+ssce.FS.umi <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.umi.ssce.rds")
+ssce.FS.all <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.all.ssce.rds")
+
+# Explore the results interactively
+# source('~/Desktop/FLASH-Seq/R/general/9_shinyUMAP.R')
+# shinyUMAP(ssce.FS.internal, markers.internal)
+# shinyUMAP(ssce.FS.umi, markers.umi)
+# shinyUMAP(ssce.FS.all, markers.all)
+
+# 2. Cell Types
+ssce.FS.internal$cell_type <- case_when(ssce.FS.internal$seurat_clusters == 0 ~ "Rod Fate",
+                            ssce.FS.internal$seurat_clusters == 1 ~ "Müller Cells",
+                            ssce.FS.internal$seurat_clusters == 2 ~ "Rods",
+                            ssce.FS.internal$seurat_clusters == 3 ~ "Rod Fate",
+                            ssce.FS.internal$seurat_clusters == 4 ~ "Müller Cells",
+                            ssce.FS.internal$seurat_clusters == 5 ~ "Müller Fate",
+                            ssce.FS.internal$seurat_clusters == 6 ~ "Amacrine Fate",
+                            ssce.FS.internal$seurat_clusters == 7 ~ "Amacrine Cells (GABA)",
+                            ssce.FS.internal$seurat_clusters == 8 ~ "Bipolar Cells (OFF)",
+                            ssce.FS.internal$seurat_clusters == 9 ~ "Cone Fate",
+                            ssce.FS.internal$seurat_clusters == 10 ~ "Amacrine/Horizontal Fate",
+                            ssce.FS.internal$seurat_clusters == 11 ~ "Apoptotic Cells",
+                            ssce.FS.internal$seurat_clusters == 12 ~ "Photoreceptor/Bipolar Fate",
+                            ssce.FS.internal$seurat_clusters == 13 ~ "Bipolar Cells (ON)",
+                            ssce.FS.internal$seurat_clusters == 14 ~ "Horizontal Cells")
+
+ssce.FS.umi$cell_type <- case_when(ssce.FS.umi$seurat_clusters == 0 ~ "Rod Fate",
+                            ssce.FS.umi$seurat_clusters == 1 ~ "Photoreceptor/Bipolar Fate",
+                            ssce.FS.umi$seurat_clusters == 2 ~ "Müller Cells",
+                            ssce.FS.umi$seurat_clusters == 3 ~ "Amacrine Fate",
+                            ssce.FS.umi$seurat_clusters == 4 ~ "Müller Cells",
+                            ssce.FS.umi$seurat_clusters == 5 ~ "Müller Fate",
+                            ssce.FS.umi$seurat_clusters == 6 ~ "Rods",
+                            ssce.FS.umi$seurat_clusters == 7 ~ "Amacrine Cells (GABA)",
+                            ssce.FS.umi$seurat_clusters == 8 ~ "Rod Fate",
+                            ssce.FS.umi$seurat_clusters == 9 ~ "Bipolar Cells (OFF)",
+                            ssce.FS.umi$seurat_clusters == 10 ~ "Apoptotic Cells",
+                            ssce.FS.umi$seurat_clusters == 11 ~ "Cone Fate",
+                            ssce.FS.umi$seurat_clusters == 12 ~ "Bipolar Cells (ON)",
+                            ssce.FS.umi$seurat_clusters == 13 ~ "Horizontal Cells")
+
+ssce.FS.all$cell_type <- case_when(ssce.FS.all$seurat_clusters == 0 ~ "Rods",
+                            ssce.FS.all$seurat_clusters == 1 ~ "Müller Cells",
+                            ssce.FS.all$seurat_clusters == 2 ~ "Photoreceptor/Bipolar Fate",
+                            ssce.FS.all$seurat_clusters == 3 ~ "Rod Fate",
+                            ssce.FS.all$seurat_clusters == 4 ~ "Amacrine Fate",
+                            ssce.FS.all$seurat_clusters == 5 ~ "Müller Cells",
+                            ssce.FS.all$seurat_clusters == 6 ~ "Amacrine Cells (GABA)",
+                            ssce.FS.all$seurat_clusters == 7 ~ "Müller Fate",
+                            ssce.FS.all$seurat_clusters == 8 ~ "Bipolar Cells (OFF)",
+                            ssce.FS.all$seurat_clusters == 9 ~ "Cone Fate",
+                            ssce.FS.all$seurat_clusters == 10 ~ "Apoptotic Cells",
+                            ssce.FS.all$seurat_clusters == 11 ~ "Amacrine/Horizontal Fate",
+                            ssce.FS.all$seurat_clusters == 12 ~ "Bipolar Cells (ON)",
+                            ssce.FS.all$seurat_clusters == 13 ~ "Horizontal Cells")
+
+write_rds(ssce.FS.internal, "/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.internal.ssce.rds")
+write_rds(ssce.FS.umi, "/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.umi.ssce.rds")
+write_rds(ssce.FS.all, "/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.all.ssce.rds")
+
+# 3. Visualize cell type distribution
+p.dimplot.celltype <- plot_grid(ncol = 3,
+   DimPlot(ssce.FS.all, group.by = "cell_type") + scale_color_manual(values = celltype.colors()) + theme(legend.position = "none"),
+ DimPlot(ssce.FS.internal, group.by = "cell_type") + scale_color_manual(values = celltype.colors()) + theme(legend.position = "none"),
+  DimPlot(ssce.FS.umi, group.by = "cell_type") + scale_color_manual(values = celltype.colors()) + theme(legend.position = "none"))
+
+ggsave(p.dimplot.celltype, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_dimplot.celltype.tiff", bg = "white", dpi = 300, width = 18, height = 6)
+
+# 4. Save results
+ssce.FS.all$cell_type <- factor(ssce.FS.all$cell_type, levels = c("Photoreceptor/Bipolar Fate", "Rod Fate", "Rods", "Cone Fate", "Müller Fate", "Müller Cells", "Bipolar Fate", "Bipolar Cells (OFF)",  "Bipolar Cells (ON)", "Amacrine/Horizontal Fate", "Amacrine Fate", "Amacrine Cells (GABA)", "Horizontal Cells",  "Glia", "Proliferating Cells", "Apoptotic Cells"))
+
+ggsave(DimPlot(ssce.FS.all, group.by = "cell_type", pt.size = 1.25) + scale_color_manual(values = celltype.colors()), dpi = 300, width = 12, height = 8, bg = "white",
+       file = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_dimplot.ALL.celltype.tiff")
+
+```
+
+
+```{r celltype distribution, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
+
+# 1. Load Data
+ssce.FS.umi <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.umi.ssce.rds")
+ssce.FS.internal <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.internal.ssce.rds")
+ssce.FS.all <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.all.ssce.rds")
+ssce.10x <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS_10x.processed.rds")
+
+# 2. Aggregate results
+# Compute the number of cell per cell type
+celltypes <- bind_rows(
+  ssce.FS.umi@meta.data %>% 
+    mutate(total = nrow(.)) %>% 
+    group_by(cell_type) %>% 
+    summarise(n = n(), perc = 100*n()/unique(total), GROUP = "UMI"),
+  ssce.FS.internal@meta.data %>% 
+    mutate(total = nrow(.)) %>% 
+    group_by(cell_type) %>% 
+    summarise(n = n(), perc = 100*n()/unique(total), GROUP = "INTERNAL"),
+  ssce.FS.all@meta.data %>% 
+    mutate(total = nrow(.)) %>% 
+    group_by(cell_type) %>% 
+    summarise(n = n(), perc = 100*n()/unique(total), GROUP = "ALL"),
+  ssce.10x@meta.data %>% 
+    mutate(total = nrow(.)) %>% 
+    group_by(cell_type) %>% 
+    summarise(n = n(), perc = 100*n()/unique(total), GROUP = "10x")
+)
+
+  
+# 3. Visualize results
+p.celltypes <- celltypes %>% 
+  filter(!cell_type %in% c("Apoptotic Cells", "Amacrine Fate", "Glia", "Bipolar Fate", "Amacrine/Horizontal Fate", "Proliferating Cells")) %>%
+  ggplot(aes(x = cell_type, y = perc, fill = GROUP)) +
+  geom_hline(yintercept = seq(0,25,5), linetype = "dashed", color = "darkgrey") +
+  geom_bar(stat = "identity", position = "dodge", color = "black") + 
+  scale_fill_manual(values = c("ALL" = "#FF850D", 
+                               "10x" = "#2ac7c2",
+                               "UMI" = "#E7298A",
+                               "INTERNAL" = "#7570B3")) +
+  theme_cowplot(font_size = 20) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1, size = 12)) +
+  xlab("") + ylab("Cells (%)")
+  
+ggsave(p.celltypes, bg = "white", filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_cell_types.perc.tiff", dpi = 200, height = 5, width = 10)
+```
+
+
+```{r dotplot, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
+
+# 1. Load Data
+ssce.FS.umi <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.umi.ssce.rds")
+ssce.FS.internal <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.internal.ssce.rds")
+ssce.FS.all <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.all.ssce.rds")
+
+# 2. Relevel
+ssce.FS.umi$cell_type <- factor(ssce.FS.umi$cell_type, levels = c("Photoreceptor/Bipolar Fate", "Rod Fate", "Rods", "Cone Fate", "Müller Fate", "Müller Cells", "Bipolar Fate", "Bipolar Cells (OFF)",  "Bipolar Cells (ON)", "Amacrine/Horizontal Fate", "Amacrine Fate", "Amacrine Cells (GABA)", "Horizontal Cells",   "Glia", "Proliferating Cells", "Apoptotic Cells"))
+
+ssce.FS.all$cell_type <- factor(ssce.FS.all$cell_type, levels = c("Photoreceptor/Bipolar Fate", "Rod Fate", "Rods", "Cone Fate", "Müller Fate", "Müller Cells", "Bipolar Fate", "Bipolar Cells (OFF)",  "Bipolar Cells (ON)", "Amacrine/Horizontal Fate", "Amacrine Fate", "Amacrine Cells (GABA)", "Horizontal Cells",  "Glia", "Proliferating Cells", "Apoptotic Cells"))
+
+ssce.FS.internal$cell_type <- factor(ssce.FS.internal$cell_type, levels = c("Photoreceptor/Bipolar Fate", "Rod Fate", "Rods", "Cone Fate", "Müller Fate", "Müller Cells", "Bipolar Fate", "Bipolar Cells (OFF)",  "Bipolar Cells (ON)", "Amacrine/Horizontal Fate", "Amacrine Fate", "Amacrine Cells (GABA)", "Horizontal Cells",   "Glia", "Proliferating Cells", "Apoptotic Cells"))
+
+# 3. Remove RNA layer
+# If multiple assays are present dotplot function crashes
+ssce.FS.umi[["RNA"]] <- NULL
+Idents(ssce.FS.umi) <- "cell_type"
+ssce.FS.internal[["RNA"]] <- NULL
+Idents(ssce.FS.internal) <- "cell_type"
+ssce.FS.all[["RNA"]] <- NULL
+Idents(ssce.FS.all) <- "cell_type"
+
+# 4. Doplots
+p.dotplot <- DotPlot(object = ssce.FS.umi, features = unique(c(
+  # "Photoreceptor/Bipolar Fate"
+  "OTX2", "PRDM1", "RXRG", "NEUROD1", "NEUROD4",
+  # "Rod Fate"
+  "NEUROD1", "CRX",
+  # "Rods"
+  "GNAT1", "PDE6G", "NRL",
+  # "Mature Rods"
+  "RHO", "GNGT1",
+  # "Cone Fate"
+  "RXRG", "PDE6H",
+  # Mature Cones
+  "ARR3", "OPN1SW",
+  # "Müller Cell Fate"
+  "HES5", "HES6",
+  # "Müller Cells"
+  "APOE", "WIF1", "SOX2", 
+  # "Bipolar Fate"
+  "VSX1", "NETO1",
+  # "Bipolar Cells (OFF)"
+  "PRDM8", "GRIK1",
+  # "Bipolar Cells (ON)"
+  "PCP2", "ISL1", "PRKCA", "TRPM1","GRM6",
+  # "Amacrine / Bipolar Fate"
+  "PAX6", "MEIS2", "RBFOX2", "PRDM13", "PTF1A",
+  # "Amacrine Cells (GABA)"
+  "GAD1", "TFAP2A",
+  # "Horizontal Cells"
+  "ONECUT1",  "ONECUT2",
+  # "Glia"
+  "DAPL1", "SFRP2", "COL9A1", 
+  # "Proliferating Cells"
+  "MKI67", "SMC4", 
+  # "Apoptotic Cells"
+  "MALAT1", "NEAT1", "BBC3"))) +
+  coord_flip() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    scale_color_gradientn(colours = rev(RColorBrewer::brewer.pal(name = "RdBu", 8))) +
+  xlab("") + ylab("")
+
+ggsave(p.dotplot, dpi = 300, width = 12, height = 12, bg = "white",
+       file = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_UMI.dotplot.tiff")
+
+p.dotplot <- DotPlot(object = ssce.FS.internal, features = unique(c(
+  # "Photoreceptor/Bipolar Fate"
+  "OTX2", "PRDM1", "RXRG", "NEUROD1", "NEUROD4",
+  # "Rod Fate"
+  "NEUROD1", "CRX",
+  # "Rods"
+  "GNAT1", "PDE6G", "NRL",
+  # "Mature Rods"
+  "RHO", "GNGT1",
+  # "Cone Fate"
+  "RXRG", "PDE6H",
+  # Mature Cones
+  "ARR3", "OPN1SW",
+  # "Müller Cell Fate"
+  "HES5", "HES6",
+  # "Müller Cells"
+  "APOE", "WIF1", "SOX2", 
+  # "Bipolar Fate"
+  "VSX1", "NETO1",
+  # "Bipolar Cells (OFF)"
+  "PRDM8", "GRIK1",
+  # "Bipolar Cells (ON)"
+  "PCP2", "ISL1", "PRKCA", "TRPM1","GRM6",
+  # "Amacrine / Bipolar Fate"
+  "PAX6", "MEIS2", "RBFOX2", "PRDM13", "PTF1A",
+  # "Amacrine Cells (GABA)"
+  "GAD1", "TFAP2A",
+  # "Horizontal Cells"
+  "ONECUT1",  "ONECUT2",
+  # "Glia"
+  "DAPL1", "SFRP2", "COL9A1", 
+  # "Proliferating Cells"
+  "MKI67", "SMC4", 
+  # "Apoptotic Cells"
+  "MALAT1", "NEAT1", "BBC3"))) +
+  coord_flip() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    scale_color_gradientn(colours = rev(RColorBrewer::brewer.pal(name = "RdBu", 8))) +
+  xlab("") + ylab("")
+
+ggsave(p.dotplot, dpi = 300, width = 12, height = 12, bg = "white",
+       file = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_INTERNAL.dotplot.tiff")
+
+
+p.dotplot <- DotPlot(object = ssce.FS.all, features = unique(c(
+  # "Photoreceptor/Bipolar Fate"
+  "OTX2", "PRDM1", "RXRG", "NEUROD1", "NEUROD4",
+  # "Rod Fate"
+  "NEUROD1", "CRX",
+  # "Rods"
+  "GNAT1", "PDE6G", "NRL",
+  # "Mature Rods"
+  "RHO", "GNGT1",
+  # "Cone Fate"
+  "RXRG", "PDE6H",
+  # Mature Cones
+  "ARR3", "OPN1SW",
+  # "Müller Cell Fate"
+  "HES5", "HES6",
+  # "Müller Cells"
+  "APOE", "WIF1", "SOX2", 
+  # "Bipolar Fate"
+  "VSX1", "NETO1",
+  # "Bipolar Cells (OFF)"
+  "PRDM8", "GRIK1",
+  # "Bipolar Cells (ON)"
+  "PCP2", "ISL1", "PRKCA", "TRPM1","GRM6",
+  # "Amacrine / Bipolar Fate"
+  "PAX6", "MEIS2", "RBFOX2", "PRDM13", "PTF1A",
+  # "Amacrine Cells (GABA)"
+  "GAD1", "TFAP2A",
+  # "Horizontal Cells"
+  "ONECUT1",  "ONECUT2",
+  # "Glia"
+  "DAPL1", "SFRP2", "COL9A1", 
+  # "Proliferating Cells"
+  "MKI67", "SMC4", 
+  # "Apoptotic Cells"
+  "MALAT1", "NEAT1", "BBC3"))) +
+  coord_flip() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    scale_color_gradientn(colours = rev(RColorBrewer::brewer.pal(name = "RdBu", 8))) +
+  xlab("") + ylab("")
+
+ggsave(p.dotplot, dpi = 300, width = 12, height = 12, bg = "white",
+       file = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_ALL.dotplot.tiff")
+
+```
+
+
+```{r cell type markers, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
+
+if(!file.exists("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.10x.markers.celltype.rds")){
+  
+  # 1. Get Cell type markers
+  ssce.FS.all <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.all.ssce.rds")
+  ssce.FS.umi <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.umi.ssce.rds")
+  ssce.FS.internal <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.internal.ssce.rds")
+  ssce.FS.10x <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS_10x.processed.rds")
+  
+  Idents(ssce.FS.umi) <- "cell_type"
+  Idents(ssce.FS.internal) <- "cell_type"
+  Idents(ssce.FS.10x) <- "cell_type"
+  Idents(ssce.FS.all) <- "cell_type"
+
+  markers.umi.cell <- FindAllMarkers(ssce.FS.umi, test.use = "MAST", logfc.threshold = 0.5, only.pos = TRUE)
+  markers.int.cell <- FindAllMarkers(ssce.FS.internal, test.use = "MAST", logfc.threshold = 0.5, only.pos = TRUE)
+  markers.10x.cell <- FindAllMarkers(ssce.FS.10x, test.use = "MAST", logfc.threshold = 0.5, only.pos = TRUE)
+  markers.all.cell <- FindAllMarkers(ssce.FS.all, test.use = "MAST", logfc.threshold = 0.5, only.pos = TRUE)
+
+  write_rds(markers.all.cell, "/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.all.markers.celltype.rds")
+  write_rds(markers.umi.cell, "/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.umi.markers.celltype.rds")
+  write_rds(markers.int.cell, "/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.internal.markers.celltype.rds")
+  write_rds(markers.10x.cell, "/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.10x.markers.celltype.rds")
+
+} else {
+  
+  # 1. Load SSCE
+  ssce.FS.umi <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.umi.ssce.rds")
+  ssce.FS.internal <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.internal.ssce.rds")
+  ssce.FS.10x <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS_10x.processed.rds")
+  ssce.FS.all <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.all.ssce.rds")
+
+  # 2. Markers - cell types
+  markers.umi.cell <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.umi.markers.celltype.rds") %>%
+    filter(p_val_adj < 0.05)
+  markers.int.cell <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.internal.markers.celltype.rds") %>%
+    filter(p_val_adj < 0.05)
+  markers.10x.cell <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.10x.markers.celltype.rds") %>%
+    filter(p_val_adj < 0.05)
+  markers.all.cell <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.all.markers.celltype.rds") %>%
+    filter(p_val_adj < 0.05)
+  
+}
+
+# 1. General Statistics:
+
+# 1.1. Markers overlapping between FS / 10x
+left_join(
+  data_frame(X=paste0(markers.10x.cell$gene, "-", markers.10x.cell$cluster),
+             Y=markers.10x.cell$cluster), data_frame(X=paste0(markers.all.cell$gene, "-", markers.all.cell$cluster), Z=TRUE)) %>%
+  group_by(Y) %>% 
+  summarise(perc = sum(Z,na.rm=T)/n()) %>% 
+  filter(perc > 0) %>% 
+  summarise(mean(perc), sd(perc))
+
+# 1.2. Markers overlapping between Internal / UMI
+left_join(
+  data_frame(X=paste0(markers.umi.cell$gene, "-", markers.umi.cell$cluster),
+             Y=markers.umi.cell$cluster), data_frame(X=paste0(markers.int.cell$gene, "-", markers.int.cell$cluster), Z=TRUE)) %>%
+  group_by(Y) %>% 
+  summarise(perc = sum(Z,na.rm=T)/n()) %>% 
+  filter(perc > 0) %>% 
+  summarise(mean(perc), sd(perc))
+
+
+# Log FC relationships:
+logFcRelation <- left_join(
+  dplyr::select(markers.umi.cell, gene, cluster, avg_log2FC),
+  dplyr::select(markers.int.cell, gene, cluster, avg_log2FC), by = c("gene", "cluster")) %>%
+  filter(!is.na(avg_log2FC.y)) 
+
+cor.test(logFcRelation$avg_log2FC.x, logFcRelation$avg_log2FC.y, method = "pearson")
+cor.test(logFcRelation$avg_log2FC.x, logFcRelation$avg_log2FC.y, method = "spearman")
+
+p.logFcRelation <- 
+  ggplot(logFcRelation, aes(avg_log2FC.y, avg_log2FC.x)) + 
+  geom_hline(yintercept = seq(0,8,2), linetype = "dashed", color = "darkgrey") +
+  geom_vline(xintercept = seq(0,8,2), linetype = "dashed", color = "darkgrey") +
+  geom_abline(color = "red", linetype = "dashed", slope = 1, intercept = 0) +
+  geom_point(alpha = 0.5) +
+  theme_cowplot(font_size = 20) +
+  ylab("Cell type markers\navg_log2FC\nUMI-reads") + 
+  xlab("Cell type markers\navg_log2FC\nInternal-reads") +
+  geom_text(data = data_frame(), aes(x = 7, y = 1, label = "Pearson:0.7147"), size = 6) +
+  geom_text(data = data_frame(), aes(x = 7, y = 2, label = "Spearman:0.6246"), size = 6)
+
+ggsave(p.logFcRelation, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_pLogFC.tiff", dpi = 300, height = 6, width = 8, bg= "white")
+
+
+# 1.3. LogFC distributions: 
+# Not used in the paper
+Idents(ssce.FS.umi) <- "cell_type"
+Idents(ssce.FS.internal) <- "cell_type"
+
+markers.umi.cell.all <- FindAllMarkers(ssce.FS.umi, test.use = "MAST")
+markers.int.cell.all <- FindAllMarkers(ssce.FS.internal, test.use = "MAST")
+
+markers.umi.cell.all <- mutate(markers.umi.cell.all, color = case_when( 
+  p_val_adj < 0.05 & avg_log2FC < 0.5 ~ "blue",
+  p_val_adj < 0.05 & avg_log2FC > 0.5 ~ "red",
+  p_val_adj > 0.05 ~ "grey")),
+markers.int.cell.all <- mutate(markers.int.cell.all, color = case_when( 
+  p_val_adj < 0.05 & avg_log2FC < 0.5 ~ "blue",
+  p_val_adj < 0.05 & avg_log2FC > 0.5 ~ "red",
+  p_val_adj > 0.05 ~ "grey"))
+
+p.logFold.distrib <- bind_rows(
+  markers.umi.cell.all %>% dplyr::select(avg_log2FC) %>% mutate(GROUP = "UMI"),
+  markers.int.cell.all %>% dplyr::select(avg_log2FC) %>% mutate(GROUP = "INTERNAL")) %>%
+  ggplot(aes(x = avg_log2FC, fill = GROUP)) +
+  geom_density(alpha = 0.5) + 
+  theme_cowplot() +
+  xlab("Average log2 Fold-Changes") + ylab("Density") +
+  scale_fill_manual(values = c("UMI" = "#E7298A", 
+                               "INTERNAL" = "#7570B3")) +
+  theme(legend.position = "none") 
+
+ggsave(p.logFold.distrib, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/logFold.distribution.tiff", dpi = 300, height = 4, width = 6, bg = "white")
+
+# 2. Compare the markers
+markers.celltype <- data_frame()
+markers.celltype.l <- list()
+for(i in unique(markers.10x.cell$cluster)){
+  
+  if(any(i %in% markers.umi.cell$cluster) & i != "Apoptotic Cells"){
+      markers.10x.cell.tmp <- filter(markers.10x.cell, cluster == i)
+      markers.umi.cell.tmp <- filter(markers.umi.cell, cluster == i)
+      markers.int.cell.tmp <- filter(markers.int.cell, cluster == i)
+      markers.all.cell.tmp <- filter(markers.all.cell, cluster == i)
+
+      markers.celltype <- bind_rows(markers.celltype,
+                                    data_frame(
+                                      cell_type = i,
+                                      # Number of markers
+                                      markers.10x = nrow(markers.10x.cell.tmp),
+                                      markers.internal = nrow(markers.int.cell.tmp),
+                                      markers.umi = nrow(markers.umi.cell.tmp),
+                                      # Overlap 10x or umi vs umi/internal
+                                      overlap_10x.umi = sum(markers.umi.cell.tmp$gene %in% markers.10x.cell.tmp$gene),
+                                      overlap_10x.internal = sum(markers.int.cell.tmp$gene %in% markers.10x.cell.tmp$gene),
+                                      overlap_umi.internal = sum(markers.int.cell.tmp$gene %in% markers.umi.cell.tmp$gene),
+                                      # Percentage overlap
+                                      overlap_10x.umi.perc = 100*overlap_10x.umi/markers.10x,
+                                      overlap_10x.internal.perc = 100*overlap_10x.internal/markers.10x,
+                                      overlap_umi.internal.perc = 100*overlap_10x.umi/markers.umi))
+
+      markers.celltype.l[[i]] <- list(`10x Genomics` = markers.10x.cell.tmp$gene, 
+                                      `FS UMI` = markers.umi.cell.tmp$gene,
+                                      `FS Internal` = markers.int.cell.tmp$gene,
+                                      `FS All` = markers.all.cell.tmp$gene)
+      
+  }
+}
+```
+
+```{r cell type marker overlaps, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
+
+# 3. Display overlap results - upset plots
+uu.l <- list()
+for(i in unique(names(markers.celltype.l))){
+  
+  uu.l[[i]] <- UpSetR::upset(UpSetR::fromList(markers.celltype.l[[i]]), 
+              order.by = "freq",
+              text.scale = c(3,3,3,1.5,2,2),
+              set_size.angles = 90,
+              sets.bar.color = as.vector(celltype.colors()[names(celltype.colors()) == i]))
+}
+
+# Tiff was not working in the loop
+tiff(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/UpsteR.photobipolarFate.tiff"), bg = "white")
+uu.l[[1]]
+dev.off()
+tiff(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/UpsteR.", names(uu.l)[2], ".tiff"), bg = "white")
+uu.l[[2]]
+dev.off()
+tiff(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/UpsteR.", names(uu.l)[3], ".tiff"), bg = "white")
+uu.l[[3]]
+dev.off()
+tiff(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/UpsteR.", names(uu.l)[4], ".tiff"), bg = "white")
+uu.l[[4]]
+dev.off()
+tiff(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/UpsteR.", names(uu.l)[5], ".tiff"), bg = "white")
+uu.l[[5]]
+dev.off()
+tiff(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/UpsteR.", names(uu.l)[6], ".tiff"), bg = "white")
+uu.l[[6]]
+dev.off()
+tiff(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/UpsteR.", names(uu.l)[7], ".tiff"), bg = "white")
+uu.l[[7]]
+dev.off()
+tiff(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/UpsteR.", names(uu.l)[8], ".tiff"), bg = "white")
+uu.l[[8]]
+dev.off()
+tiff(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/UpsteR.horizamacrineFate.tiff"), bg = "white")
+uu.l[[9]]
+dev.off()
+tiff(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/UpsteR.", names(uu.l)[10], ".tiff"), bg = "white")
+uu.l[[10]]
+dev.off()
+tiff(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/UpsteR.", names(uu.l)[11], ".tiff"), bg = "white")
+uu.l[[11]]
+dev.off()
+
+plot_grid(uu.l)
+```
+
+
+```{r cell type marker properties, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
+
+# 5. Compare marker properties
+# Almost no difference
+gc.perc <- read.table(file="/home/vincent.hahaut/data_storage/REFERENCES/hsap_fastsmart/REFERENCE/GTF/gencode.v34.exon.GC_lengths.tsv", header = T, sep="\t")
+gtf.type <- dplyr::select(gtf, gene_name, gene_type) %>% 
+  distinct() %>%
+  group_by(gene_name) %>% 
+  # <10 genes have two gene types 
+  mutate(n = n()) %>%
+  ungroup() %>%
+  filter(n == 1) %>% dplyr::select(gene_name, gene_type)
+overlap.properties <- data_frame()
+
+for(i in unique(markers.10x.cell$cluster)){
+  
+  if(any(i %in% markers.umi.cell$cluster) & i != "Apoptotic Cells / Debris"){
+    
+    # Select markers from a specific cell type  
+    markers.10x.cell.tmp <- filter(markers.10x.cell, cluster == i)
+    markers.umi.cell.tmp <- filter(markers.umi.cell, cluster == i)
+    markers.int.cell.tmp <- filter(markers.int.cell, cluster == i)
+    
+    # Specific markers and overlap
+    umi.specific <- markers.umi.cell.tmp$gene[!markers.umi.cell.tmp$gene %in% markers.10x.cell.tmp$gene]
+    umi.10x.overlap <- markers.umi.cell.tmp$gene[markers.umi.cell.tmp$gene %in% markers.10x.cell.tmp$gene]
+    inter.specific <- markers.int.cell.tmp$gene[!markers.int.cell.tmp$gene %in% markers.10x.cell.tmp$gene]
+    inter.10x.overlap <- markers.int.cell.tmp$gene[markers.int.cell.tmp$gene %in% markers.10x.cell.tmp$gene]
+      
+    # Add the gene properties info
+    umi.specific <- left_join(data.frame(gene_name = umi.specific), gc.perc) %>%
+      left_join(gtf.type) %>%
+      mutate(TYPE = "FS-UMI Specific")
+    umi.10x.overlap <- left_join(data.frame(gene_name = umi.10x.overlap), gc.perc) %>%
+      left_join(gtf.type) %>%
+      mutate(TYPE = "Overlap UMI-10x")
+    inter.specific <- left_join(data.frame(gene_name = inter.specific), gc.perc) %>%
+      left_join(gtf.type) %>%
+      mutate(TYPE = "FS-Internal Specific")
+    inter.10x.overlap <- left_join(data.frame(gene_name = inter.10x.overlap), gc.perc)%>%
+      left_join(gtf.type) %>%
+      mutate(TYPE = "Overlap Internal-10x")
+  
+    # Aggregate results
+    overlaps <- bind_rows(umi.specific, umi.10x.overlap, inter.specific, inter.10x.overlap) %>%
+      mutate(cell_type = i)
+
+    overlap.properties <- bind_rows(overlap.properties, overlaps)
+      
+  }
+}
+
+# Visualize results
+ggplot(overlap.properties, aes(x = TYPE, y = GC, fill = TYPE)) +
+  geom_violin() +
+  geom_boxplot(width = 0.1) +
+  scale_fill_brewer(palette = "Set1") +
+  theme_cowplot(font_size = 20)
+
+ggplot(overlap.properties, aes(x = TYPE, y = Length, fill = TYPE)) +
+  geom_violin() +
+  geom_boxplot(width = 0.1) +
+  scale_fill_brewer(palette = "Set1") +
+  theme_cowplot(font_size = 20) +
+  ylim(c(0,10000))
+
+p.overlap <- overlap.properties %>%
+  filter(gene_type %in% c("protein_coding", "lncRNA")) %>%
+  mutate(gene_type = ifelse(gene_type == "protein_coding", "Protein Coding", "LncRNA")) %>%
+  group_by(TYPE, cell_type) %>%
+  mutate(total = n()) %>%
+  group_by(TYPE, cell_type, gene_type) %>%
+  summarise(perc = 100*n()/unique(total)) %>%
+  ungroup() %>%
+  ggplot(aes(x = gene_type, y = perc, fill = TYPE)) +
+  geom_hline(yintercept = seq(0,100,20), linetype = "dashed", color = "darkgrey") +
+  geom_violin() +
+  geom_boxplot(width = 0.1, position = position_dodge(0.9)) +
+  scale_fill_brewer(palette = "Set1") +
+  theme_cowplot(font_size = 20) +
+  xlab("") + ylab("Detected Genes (%)") +
+  theme(legend.title = element_blank(),
+        legend.position = "bottom") +
+  guides(fill = guide_legend(nrow = 2))
+
+ggsave(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/Gene_features.tiff"),
+  p.overlap,
+  dpi = 200, width = 6, height = 4, bg = "white")
+
+# No ACTUAL DIFFERENCES EXCEPT LNCRNA
+```
+
+
+```{r gene diversity, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
+
+# 1. Load the data
+ssce.10x <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS_10x.processed.rds")
+ssce.FS.all <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.internal.ssce.rds")
+
+# 2. Resample 10 cells 100 times in each cell type (10x / FS-UMI)
+# Get the number of genes detected in >2 cells
+set.seed(42)
+res <- data_frame()
+for(i in unique(ssce.FS.all$cell_type)){
+  print(i)
+  
+  if(any(ssce.10x$cell_type %in% i) & any(ssce.FS.all$cell_type %in% i)){
+    ssce.10x.tmp <- ssce.10x[,ssce.10x$cell_type == i]
+    ssce.FS.all.tmp <- ssce.FS.all[,ssce.FS.all$cell_type == i]
+    
+    for(j in 1:100){
+        print(paste0(i, " : ", j))
+        set.seed(j)
+        index.1 <- sample(1:ncol(ssce.10x.tmp), size = 10, replace = FALSE)
+        index.2 <- sample(1:ncol(ssce.FS.all.tmp), size = 10, replace = FALSE)
+        
+        sce.1 <- ssce.10x.tmp[,index.1]
+        sce.2 <- ssce.FS.all.tmp[,index.2]
+        
+        res <- bind_rows(res,
+                  data_frame(
+                    times = j,
+                    cell_type = i,
+                    DROPLET = sum(rowSums(GetAssayData(sce.1, "counts") > 0) > 2),
+                    SMART = sum(rowSums(GetAssayData(sce.2, "counts") > 0) > 2))
+        )
+      }
+    }
+  }
+
+
+# 3. Visualize results 
+p.diversity <- res %>%
+  filter(!cell_type %in% c("Apoptotic Cells", "Amacrine Fate")) %>%
+  pivot_longer(cols = c("DROPLET", "SMART")) %>% 
+  ggplot() +
+  geom_hline(yintercept = seq(2000,10000,1000), linetype = "dashed", color = "darkgrey") +
+  geom_violin(aes(x = cell_type, fill = name, y = value)) +
+  geom_boxplot(aes(x = cell_type, fill = name, y = value), width = 0.1, position = position_dodge(width = 0.9)) +
+  scale_fill_manual(values = c("SMART" = "#FF850D", 
+                               "DROPLET" = "#2ac7c2")) +
+  theme_cowplot(font_size = 20) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 12), legend.position = "none") +
+  ylab("Gene Diversity") + xlab("") +
+  theme(legend.title = element_blank()) 
+
+ggsave(p.diversity, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_diversity.tiff",
+       dpi = 200, width = 8, height = 6, bg = "white")
+
+```
+
+
+```{r gene diversity - matching depth, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
+
+# 1. Load Results
+ssce.FS.all <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.internal.ssce.rds")
+ssce.10x <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS_10x.processed.rds")
+c.FS.internal <- featurecounts.exon.down
+c.FS.umi <- umi.exon.down
+
+# 2. Resample 10 cells 100 times in each cell type (10x / FS-UMI)
+# Get the number of genes detected in >2 cells
+set.seed(42)
+res <- data_frame()
+for(i in unique(ssce.FS.all$cell_type)){
+  print(i)
+  
+  index <- paste0(colnames(ssce.FS.all)[ssce.FS.all$cell_type == i], "_33800")
+  if(any(ssce.10x$cell_type %in% i) & any(ssce.FS.all$cell_type %in% i)){
+    ssce.10x.tmp <- ssce.10x[,ssce.10x$cell_type == i]
+    c.FS.internal.tmp <- c.FS.internal[,colnames(c.FS.internal) %in% index]
+    c.FS.umi.tmp <- c.FS.umi[,paste0("X", colnames(c.FS.umi)) %in% index]
+
+    for(j in 1:100){
+        print(paste0(i, " : ", j))
+        set.seed(j)
+        index.1 <- sample(1:ncol(ssce.10x.tmp), size = 10, replace = FALSE)
+        index.2 <- sample(1:ncol(c.FS.internal.tmp), size = 10, replace = FALSE)
+        index.3 <- sample(1:ncol(c.FS.umi.tmp), size = 10, replace = FALSE)
+
+        sce.1 <- ssce.10x.tmp[,index.1]
+        sce.2 <- c.FS.internal.tmp[,index.2]
+        sce.3 <- c.FS.umi.tmp[,index.3]
+
+        res <- bind_rows(res,
+                  data_frame(
+                    times = j,
+                    cell_type = i,
+                    DROPLET = sum(rowSums(GetAssayData(sce.1, "counts") > 0) > 2),
+                    INTERNAL = sum(rowSums(counts(sce.2) > 0) > 2),
+                    UMI = sum(rowSums(counts(sce.3) > 0) > 2))
+        )
+      }
+    }
+  }
+
+# 3. Aggregate results
+res <- res %>%
+  filter(!cell_type %in% c("Apoptotic Cells", "Amacrine Fate")) %>%
+  pivot_longer(cols = c("INTERNAL", "UMI", "DROPLET")) 
+
+
+# 4. Dunn's test
+p.signif <- res %>%
+  group_by(cell_type) %>%
+  rstatix::dunn_test(value ~ name) %>%
+  filter(group1 == "DROPLET") %>%
+  filter(p.adj < 0.05) %>%
+  mutate(p.adj = p.adjust(p, method = "bonferroni"),
+         p.adj.signif = ifelse(p.adj.signif == "****", "***", p.adj.signif)) %>%
+  group_by(cell_type) %>%
+  mutate(y = seq(7000,7000+250*(n()-1),250)) %>%
+  ungroup() %>%
+  mutate(xstart = 0.675,
+         xend = xstart+(match(group2, levels(factor(res$name)))-1)/3)
+
+p.diversity <- res %>%
+  ggplot() +
+  geom_violin(aes(x = cell_type, fill = name, y = value)) +
+  geom_boxplot(aes(x = cell_type, fill = name, y = value), width = 0.1, position = position_dodge(width = 0.9)) +
+  scale_fill_manual(values = c("UMI" = "#E7298A", 
+                               "INTERNAL" = "#7570B3",
+                               "DROPLET" = "#2ac7c2")) +
+  facet_wrap("cell_type", scales = "free_x", nrow = 2) +
+  theme_bw(base_size = 18) +
+  ylab("Gene Diversity") + ylab("") +
+  theme(legend.position = "none", 
+        legend.title = element_blank(), 
+        axis.ticks.x = element_blank(),
+        axis.text.x = element_blank()) +
+  geom_segment(data = p.signif, aes(x = xstart, xend = xend, y=y,yend=y)) + 
+  geom_text(data = p.signif, aes(x = (xstart+xend)/2, y=y*1.005, label = p.adj.signif), size = 7) 
+
+ggsave(p.diversity, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_diversity.downsample.tiff",
+       dpi = 200, width = 20, height = 6, bg = "white")
+
+```
+
+
+```{r number of detected genes, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
+
+# 1. Load Data
+ssce.10x <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS_10x.processed.rds")
+
+# 2. Aggregate results
+# Get gene/isoform counts at three thresholds
+med.10x <- data_frame(ID = colnames(ssce.10x),
+                      count_0.10x = colSums(GetAssayData(object = ssce.10x, slot = "counts") > 0), 
+                      count_1.10x = colSums(GetAssayData(object = ssce.10x, slot = "counts") > 1), 
+                      count_5.10x = colSums(GetAssayData(object = ssce.10x, slot = "counts") > 5),
+                      cell_type.10x = ssce.10x$cell_type)
+
+med.salmon <- data_frame(ID = colnames(salmon.all),
+                      count_0.salmon = colSums(assay(salmon.all, "abundance") > 0), 
+                      count_1.salmon = colSums(assay(salmon.all, "abundance") > 1), 
+                      count_5.salmon = colSums(assay(salmon.all, "abundance") > 5))
+
+med.internal <- data_frame(ID = str_replace(colnames(ssce.FS.internal), "X", ""),
+                           count_0.internal = colSums(GetAssayData(object = ssce.FS.internal, slot = "counts") > 0), 
+                           count_1.internal = colSums(GetAssayData(object = ssce.FS.internal, slot = "counts") > 1), 
+                           count_5.internal = colSums(GetAssayData(object = ssce.FS.internal, slot = "counts") > 5), 
+                           cell_type.internal = ssce.FS.internal$cell_type)
+
+med.umi <- data_frame(ID = colnames(ssce.FS.umi),
+                      count_0.umi = colSums(GetAssayData(object = ssce.FS.umi, slot = "counts") > 0), 
+                      count_1.umi = colSums(GetAssayData(object = ssce.FS.umi, slot = "counts") > 1), 
+                      count_5.umi = colSums(GetAssayData(object = ssce.FS.umi, slot = "counts") > 5))
+
+med.all <- data_frame(ID = str_replace(colnames(featurecounts.all), "X", ""),
+                      count_0.all = colSums(counts(featurecounts.all) > 0), 
+                      count_1.all = colSums(counts(featurecounts.all) > 1), 
+                      count_5.all = colSums(counts(featurecounts.all) > 5))
+
+med.combined <- bind_rows(data_frame(count_0 = colSums(counts(featurecounts.all) > 0), cell_type = ssce.FS.internal$cell_type, GROUP = "FLASH-Seq"),
+                          data_frame(count_0 = med.10x$count_0.10x, cell_type = med.10x$cell_type, GROUP = "10x Genomics"))
+
+# 3. Regroup data
+med <- left_join(med.internal, med.umi, by = c("ID")) %>%
+  left_join(med.salmon, by = c("ID")) %>%
+  left_join(med.all, by = "ID") %>%
+  mutate(difference = count_0.umi / count_0.internal)
+
+# 4. Visualize proportion UMI gene / internal gene 
+# Not used for the manuscript
+p.proportion <- ggplot(med %>% filter(cell_type.internal != "Apoptotic Cells"), aes(x = cell_type.internal, y = difference, fill = cell_type.internal)) + 
+  geom_hline(yintercept = seq(0.2,0.8,0.1), linetype = "dashed", color = "darkgrey") +
+  geom_violin() +
+  geom_boxplot(width = 0.05) +
+  scale_fill_manual(values = celltype.colors()) +
+  scale_y_continuous(breaks = seq(0.2,0.8,0.1)) +
+  theme_cowplot(font_size = 20) +
+  theme(legend.position = "none", axis.text.x = element_text(size = 12)) + 
+  xlab("") + ylab("Proportion\nUMI / Internal Genes")
+
+
+# 5. Number of detected genes per read type
+med <- med %>%
+  pivot_longer(cols = c(count_0.internal, count_0.umi, count_0.salmon, count_0.all)) %>%
+  dplyr::select(cell_type.internal, name, value) %>%
+  bind_rows(data_frame(name = "10x Genomics", value = med.10x$count_0.10x, cell_type.internal = med.10x$cell_type.10x)) %>%
+  mutate(cell_type.internal = ifelse(cell_type.internal %in% c("Rod Fate", "Photoreceptor/Bipolar Fate"), "Photoreceptor Fate", cell_type.internal)) %>%
+  filter(cell_type.internal %in% c("Rods","Müller Cells","Bipolar Cells (OFF)","Amacrine/Horizontal Fate", "Rod Fate",
+  "Bipolar Cells (ON)", "Amacrine Cells (GABA)", "Photoreceptor Fate", 
+  "Müller Fate", "Cone Fate", "Horizontal Cells", "Photoreceptor/Bipolar Fate")) %>%
+  mutate(name = case_when(
+    name == "count_0.all" ~ "FS-UMI\nAll\nGenes",
+    name == "count_0.internal" ~ "FS-UMI\nInternal\nGenes",
+    name == "count_0.umi" ~ "FS-UMI\nUMI\nGenes",
+    name == "count_0.salmon"~ "FS-UMI\nAll\nTranscripts",
+    name == "10x Genomics" ~ "10x\nGenomics\nGenes"),
+    name = factor(name, levels = c("10x\nGenomics\nGenes", "FS-UMI\nUMI\nGenes", "FS-UMI\nInternal\nGenes", "FS-UMI\nAll\nGenes", "FS-UMI\nAll\nTranscripts"))) 
+
+# 6. Statistical significance
+
+# 6.1. Wilcoxon-test paired intra FS
+p.signif <- ggpubr::compare_means(data = med, value ~ name  , group.by = "cell_type.internal") %>%
+  filter(group1 != "FS-UMI\nAll\nTranscripts", group2 != "FS-UMI\nAll\nTranscripts") %>%
+  # Readjust pvals as one group was dropped
+  mutate(p.adj = p.adjust(p, method = "bonferroni"),
+         p.signif = case_when(p.adj < 0.05 & p.adj > 0.005 ~ "*",
+                              p.adj < 0.005 & p.adj > 0.0005 ~ "**",
+                              p.adj < 0.0005 ~ "***",
+                              TRUE ~ "ns")) %>%
+  filter(p.adj < 0.05) %>%
+  group_by(cell_type.internal) %>%
+  mutate(y = seq(15000,15000+800*(n()-1),800)) %>%
+  ungroup() %>%
+  mutate(xstart = match(group1, levels(med$name)),
+         xend = match(group2, levels(med$name))) 
+
+# 7. Visualize results
+p.gene.per.cell <- 
+  ggplot() +
+  geom_hline(yintercept = seq(0,20000,2000), linetype = "dashed", color = "darkgrey") + 
+  geom_violin(data =med, aes(x = name, y = value, fill = name)) +
+  facet_wrap("cell_type.internal", nrow = 2) +
+  geom_boxplot(data =med, aes(x = name, y = value, fill = name), width = 0.05) +
+  scale_fill_manual(values = c("FS-UMI\nAll\nTranscripts" = "#1B9E77",
+                               "FS-UMI\nAll\nGenes" = "#D95F02",
+                               "FS-UMI\nInternal\nGenes" = "#7570B3", 
+                               "FS-UMI\nUMI\nGenes" = "#E7298A",
+                               "10x\nGenomics\nGenes" = "#2ac7c2")) +
+  theme_bw(base_size = 24) +
+  theme(legend.position = "none", axis.text.x = element_blank()) + 
+  xlab("") + 
+  ylab("Detected Features") +
+  geom_segment(data = p.signif, aes(x = xstart, xend = xend, y=y,yend=y)) + 
+  geom_text(data = p.signif, aes(x = (xstart+xend)/2, y=y*1.0025, label = p.signif), size = 7) 
+
+# 8. Save
+ggsave(p.gene.per.cell, dpi = 200, height = 12, width = 24, bg = "white",
+       filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_totalGenes.tiff")
+
+  
+ggsave(p.proportion, dpi = 200, height = 6, width = 6, bg = "white",
+       filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_proportions.tiff")
+
+
+# Minimal plot
+p.genes.minimal <- 
+  ggplot(med.combined) +
+  geom_hline(yintercept = seq(0,10000,2000), linetype = "dashed", color = "darkgrey") + 
+  geom_violin(aes(x = GROUP, y = count_0, fill = GROUP)) +
+  facet_wrap("cell_type", nrow = 2) +
+  geom_boxplot(aes(x = GROUP, y = count_0, fill = GROUP), width = 0.1) +
+  scale_fill_manual(values = c("FLASH-Seq" = "#D95F02",
+                               "10x Genomics" = "#2ac7c2")) +
+  theme_bw(base_size = 24) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  xlab("") + 
+  ylab("Detected Genes") 
+
+
+```
+
+
+
+```{r Isoform-level, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
+
+library(tidyverse)
+library(Seurat)
+mydate <- "2021-11-22"
+
+# 1. Import Salmon Data
+ssce.FS.all <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.all.ssce.rds")
+tx2gene <- read_tsv("/home/vincent.hahaut/data_storage/REFERENCES/hsap_fastsmart/salmon_precomputed/salmon_sa_index/txp2gene.tsv", col_names = F)
+salmon.all <- read_rds(file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_salmon.all.", mydate, ".rds"))
+unwanted <- gtf %>% filter(gene_type %in% c("rRNA_pseudogene", "rRNA", "Mt_rRNA") | grepl("^RPL|^RPS|MALAT1", gene_name)) %>% dplyr::select(gene_name, transcript_id) %>% pivot_longer(cols = c(gene_name, transcript_id)) %>% dplyr::select(value) %>% distinct()
+
+# 2. To Seurat Object
+ssce <- Seurat::CreateSeuratObject(counts = SummarizedExperiment::assay(salmon.all, "abundance"))
+ssce$cell_type <- ssce.FS.all$cell_type[match(paste0("X", colnames(ssce)), colnames(ssce.FS.all))]
+
+# 3. Filter out lowly expressed transcripts and low quality cells
+ssce <- ssce[rowSums(GetAssayData(object = ssce, slot = "counts") > 1) > 5,]
+ssce <- ssce[,paste0("X", colnames(ssce)) %in% colnames(ssce.FS.all)]
+ssce <- ssce[!row.names(ssce) %in% unwanted,]
+
+# 4. LogNormalize
+# SCT transform works but better stay on known things
+ssce <- NormalizeData(ssce)
+
+# 5. Variable Features
+# Tested various nfeatures: 5-8K give the best results
+ssce <- FindVariableFeatures(ssce, selection.method = "vst", nfeatures = 5000)
+
+# 6. Dimension reduction
+ssce <- ScaleData(ssce)
+ssce <- RunPCA(ssce, features = VariableFeatures(object = ssce), npcs = 40)
+ElbowPlot(ssce, ndims = 40)
+ssce <- RunUMAP(ssce, dims = 1:12, umap.method = "uwot")
+ssce <- FindNeighbors(ssce, dims = 1:12)
+ssce <- FindClusters(ssce, resolution = 1)
+
+# 7. Visualize
+DimPlot(ssce, group.by = "seurat_clusters")
+
+ggsave(DimPlot(ssce, group.by = "cell_type") + scale_color_manual(values = celltype.colors()), bg = "white",
+  dpi = 200, width = 10, height = 6, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/DimPlot.transcriptome.tiff")
+
+# 8. Get markers at the cell type level
+Idents(ssce) <- "cell_type"
+markers.transcripts <- FindAllMarkers(ssce, logfc.threshold = 0.5, test.use = "t", min.pct = 0.25, only.pos = TRUE)
+
+# 9. Summarize isoforms markers to the gene level
+markers.transcripts <- left_join(markers.transcripts, tx2gene, by = c("gene" = "X1")) %>% 
+    # Transcript occurence
+    filter(p_val_adj < 0.01) %>%
+    group_by(gene) %>%
+    mutate(n.occurence = n()) %>%
+    ungroup() %>%
+  group_by(X2) %>%
+  mutate(n.occurence.gene = n(), 
+         n.celltype = length(unique(cluster)))
+
+# Explore results
+markers.transcripts.final <- left_join(markers.transcripts, 
+          dplyr::select(markers.genes, cluster, gene) %>% mutate(isGeneDE = TRUE),
+          by = c("cluster", "X2" = "gene"))
+
+markers.comparedCelltypes <- FindMarkers(ssce, ident.1 = "Müller Cells", ident.2 = "Müller Fate", logfc.threshold = 0.5,  min.pct = 0.25) %>%
+  rownames_to_column("gene") %>%
+  left_join(tx2gene, by = c("gene" = "X1")) %>% 
+    # Transcript occurence
+    filter(p_val_adj < 0.01) %>%
+    group_by(gene) %>%
+    mutate(n.occurence = n()) %>%
+    ungroup() %>%
+  group_by(X2) %>%
+  mutate(n.occurence.gene = n(), 
+         nCell.type1 = sum(avg_log2FC > 0),
+         nCell.type2 = sum(avg_log2FC < 0))
+
+# Visualize the number of isoform cell type markers per gene
+p.isoforms <- markers.transcripts.final %>%
+  filter(!is.na(isGeneDE)) %>%
+  group_by(cluster, X2) %>%
+  mutate(n = n()) %>%
+  filter(cluster != "Apoptotic Cells / Debris") %>%
+  ggplot(aes(x = as.factor(n), fill = cluster)) +
+  geom_bar(position = "dodge", color = "black") +
+  scale_fill_manual(values = celltype.colors()) +
+  theme_cowplot(font_size = 20) +
+  xlab("Isoforms per DE gene") + 
+  ylab("Number of DE gene") +
+  theme(legend.title = element_blank()) 
+
+ggsave(p.isoforms, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/Isoforms.tiff", dpi = 200, height = 6, width = 10, bg = "white")
+```
+
+```{r Isoform-level - visualize isoforms, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
+
+# Visualize gene body coverage in a specific cell type
+p.gviz <- function(paths = NULL, gene = "PKM", cells = cells, out = NULL, which_cells = 40:60){
+  
+  library(Gviz)
+  library(TxDb.Hsapiens.UCSC.hg38.knownGene)
+  txdb <- TxDb.Hsapiens.UCSC.hg38.knownGene
+
+  # 1. BED file
+  bed.tmp <- filter(gtf[gtf$gene_name == gene,], type == "gene")
+  
+  # 2. Bam paths
+  mypaths <- paste0(paths, "/", cells, "/STAR/", cells, "_ALL_Aligned.sortedByCoord.filtered.bam")
+  mypaths <- mypaths[file.exists(mypaths)]
+    
+  # 3. GenomeCov
+  region <- paste0(bed.tmp$seqnames, ":", bed.tmp$start, "-", bed.tmp$end)
+  file.remove("/home/vincent.hahaut/Desktop/merged.bam")
+  system(paste0("samtools merge -R ", region, " /home/vincent.hahaut/Desktop/merged.bam ", paste(mypaths[which_cells], collapse = " ")))
+  Rsamtools::indexBam("/home/vincent.hahaut/Desktop/merged.bam")
+  
+  gtrack <- GenomeAxisTrack(cex = 1)  # set the font size larger
+  options(ucscChromosomeNames=FALSE)
+  grtrack <- GeneRegionTrack(
+      txdb,
+      chromosome = bed.tmp$seqnames,
+      start = bed.tmp$start, 
+      end = bed.tmp$end, 
+      geneSymbol=TRUE, name = "Gene Annotation", 
+      transcriptAnnotation = "symbol",
+      background.panel = "#FFFEDB",
+      background.title = "brown")
+  
+  altrack <- AlignmentsTrack(
+      "/home/vincent.hahaut/Desktop/merged.bam", 
+      isPaired = TRUE, 
+      col.mates = "deeppink",
+      col.title="black", 
+      col.frame = "transparent"
+  )
+  
+  pdf(out, height = 12, width = 12)
+  plotTracks(
+      list(gtrack, altrack, grtrack), 
+      ucscChromosomeNames=FALSE, 
+      col.axis="black",
+      type = c("coverage","sashimi", "pileup"),
+      from = bed.tmp$start, to = bed.tmp$end,
+      reverseStrand = ifelse(bed.tmp$strand == "+", FALSE, TRUE),
+      extend.right = bed.tmp$width*0.15,
+      extend.left = bed.tmp$width*0.05
+  )
+  dev.off()
+  
+}
+
+# Series of interesting isoforms 
+paths = "/home/vincent.hahaut/data_storage/ORGANOIDS/STAR"
+
+p.gviz(paths = paths, gene = gene, cells = na.omit(colnames(ssce)[ssce$cell_type == "Cone Fate"]), out = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_PKM_Cones.pdf")
+p.gviz(paths = paths, gene = gene, cells = na.omit(colnames(ssce)[ssce$cell_type == "Rods"]), out = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_PKM_Rods.pdf")
+p.gviz(paths = paths, gene = gene, cells = na.omit(colnames(ssce)[ssce$cell_type == "Amacrine Cells (GABA)"]), out = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_PKM_amacrine.pdf")
+p.gviz(paths = paths, gene = gene, cells = na.omit(colnames(ssce)[ssce$cell_type == "Müller Cells"]), out = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_PKM_mueller.pdf")
+p.gviz(paths = paths, gene = "TUBB2B", cells = na.omit(colnames(ssce)[ssce$cell_type == "Rods"]), out = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_TUBB2B.Rods.pdf")
+p.gviz(paths = paths, gene = "TUBB2B", cells = na.omit(colnames(ssce)[ssce$cell_type == "Müller Cells"]), out = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_TUBB2B_mueller.pdf")
+
+p.gviz(paths = paths, gene = "REEP6", cells = na.omit(colnames(ssce)[ssce$cell_type == "Rods"]), out = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_REEP6_Rods.pdf")
+p.gviz(paths = paths, gene = "REEP6", cells = na.omit(colnames(ssce)[ssce$cell_type == "Cone Fate"]), out = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_REEP6_Cones.pdf")
+
+p.gviz(paths = paths, gene = "EWSR1", cells = na.omit(colnames(ssce)[ssce$cell_type == "Amacrine Cells (GABA)"]), out = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_EWSR1_amacrine.pdf")
+p.gviz(paths = paths, gene = "EWSR1", cells = na.omit(colnames(ssce)[ssce$cell_type == "Rods"]), out = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_EWSR1_rods.pdf")
+
+p.gviz(paths = paths, gene = "NRL", cells = na.omit(colnames(ssce)[ssce$cell_type == "Rods"]), out = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_NRL_rods.pdf")
+p.gviz(paths = paths, gene = "NRL", cells = na.omit(colnames(ssce)[ssce$cell_type == "Rod Fate"]), out = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_NRL_rodfate.pdf")
+p.gviz(paths = paths, gene = "NRL", cells = na.omit(colnames(ssce)[ssce$cell_type == "Cone Fate"]), out = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_NRL_conefate.pdf")
+p.gviz(paths = paths, gene = "NRL", cells = na.omit(colnames(ssce)[ssce$cell_type == "Photoreceptor/Bipolar Fate"]), out = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_NRL_photoreceptorfate.pdf")
+
+index <- ssce.FS.all[,FetchData(ssce.FS.all, "PRDM1") > 5 & ssce.FS.all$cell_type == "Photoreceptor/Bipolar Fate"]
+p.gviz(paths = paths, gene = "NRL", cells = str_replace(colnames(index),"X",""), out = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_NRL_photoreceptorfate.pdf")
+
+p.gviz(paths = paths, gene = "RORB", cells = na.omit(colnames(ssce)[ssce$cell_type == "Rod Fate"]), out = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_RORB_rodfate.pdf")
+p.gviz(paths = paths, gene = "RORB", cells = na.omit(colnames(ssce)[ssce$cell_type == "Rods"]), out = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_RORB_rods.pdf")
+p.gviz(paths = paths, gene = "RORB", cells = na.omit(colnames(ssce)[ssce$cell_type == "Müller Cells"]), out = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_RORB_muller.pdf")
+p.gviz(paths = paths, gene = "RORB", cells = na.omit(colnames(ssce)[ssce$cell_type == "Horizontal Cells"]), out = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_RORB_horizontal.pdf")
+p.gviz(paths = paths, gene = "RORB", cells = na.omit(colnames(ssce)[ssce$cell_type == "Photoreceptor/Bipolar Fate"]), out = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_RORB_fate.pdf")
+p.gviz(paths = paths, gene = "RORB", cells = na.omit(colnames(ssce)[ssce$cell_type == "Cone Fate"]), out = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_RORB_cone.pdf")
+
+p.gviz(paths = paths, gene = "USH2A", cells = na.omit(colnames(ssce)[ssce$cell_type == "Rod Fate"]), out = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_USH2A_rodfate.pdf")
+p.gviz(paths = paths, gene = "USH2A", cells = na.omit(colnames(ssce)[ssce$cell_type == "Rods"]), out = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_USH2A_rods.pdf")
+p.gviz(paths = paths, gene = "USH2A", cells = na.omit(colnames(ssce)[ssce$cell_type == "Müller Cells"]), out = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_USH2A_muller.pdf")
+p.gviz(paths = paths, gene = "USH2A", cells = na.omit(colnames(ssce)[ssce$cell_type == "Horizontal Cells"]), out = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_USH2A_horizontal.pdf")
+p.gviz(paths = paths, gene = "USH2A", cells = na.omit(colnames(ssce)[ssce$cell_type == "Photoreceptor/Bipolar Fate"]), out = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_USH2A_fate.pdf")
+```
+
+
+```{r Isoform-level - visualize isoforms - 10x, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
+
+# Add some examples with 10x Genomics data
+library(Gviz)
+library(TxDb.Hsapiens.UCSC.hg38.knownGene)
+txdb <- TxDb.Hsapiens.UCSC.hg38.knownGene
+ID="Rod_100_1.rods"
+paths = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS_W18/VARIANTS/", ID, "/", ID, "_2pass__Aligned.sortedByCoord.out.bam")
+gene = "PKM"
+out = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS_W18/ORGANOIDS_", ID, "_", gene, "_10x.pdf")
+
+# 1. BED file
+bed.tmp <- filter(gtf[gtf$gene_name == gene,], type == "gene")
+  
+gtrack <- GenomeAxisTrack(cex = 1)  # set the font size larger
+options(ucscChromosomeNames=FALSE)
+grtrack <- GeneRegionTrack(
+    txdb,
+    chromosome = bed.tmp$seqnames,
+    start = bed.tmp$start, 
+    end = bed.tmp$end, 
+    geneSymbol=TRUE, name = "Gene Annotation", 
+    transcriptAnnotation = "symbol",
+    background.panel = "#FFFEDB",
+    background.title = "brown")
+  
+altrack <- AlignmentsTrack(
+    paths, 
+    isPaired = TRUE, 
+    col.mates = "deeppink",
+    col.title="black", 
+    col.frame = "transparent"
+)
+  
+pdf(out, height = 12, width = 12)
+  plotTracks(
+      list(gtrack, altrack, grtrack), 
+      ucscChromosomeNames=FALSE, 
+      col.axis="black",
+      type = c("coverage","sashimi", "pileup"),
+      from = bed.tmp$start, to = bed.tmp$end,
+      reverseStrand = ifelse(bed.tmp$strand == "+", FALSE, TRUE),
+      extend.right = bed.tmp$width*0.15,
+      extend.left = bed.tmp$width*0.05
+)
+dev.off()
+
+```
+
+
+```{r PKM distribution exon coverage, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
+
+# 1. Get BAM files of retinal organoid cells
+cells <- colnames(ssce)
+mypaths <- paste0(paths, "/", cells, "/STAR/", cells, "_ALL_Aligned.sortedByCoord.filtered.bam")
+mypaths <- mypaths[file.exists(mypaths)]
+
+# 2. Extract counts on exon9/10 and all PKM gene
+exon9 <- GRanges(seqnames = "chr15", IRanges(start = 72203022, end = 72203188))
+exon10 <- GRanges(seqnames = "chr15", IRanges(start = 72202454, end = 72202620))
+full.gene <- GRanges(seqnames = "chr15", IRanges(start = 72199029, end = 72231822))
+
+PKM.coverage <- data_frame()
+for(i in mypaths){
+  
+  exon9.c <- bamsignals::bamCount(bampath = i, gr = exon9, paired.end = "ignore", verbose=FALSE)
+  exon10.c <- bamsignals::bamCount(bampath = i, gr = exon10, paired.end = "ignore", verbose=FALSE)
+  full <- bamsignals::bamCount(bampath = i, gr = full.gene, paired.end = "ignore", verbose=FALSE)
+
+  PKM.coverage <- bind_rows(PKM.coverage, 
+                            data_frame(
+                              ID = str_split(i, "/", simplify = T)[,7],
+                              exon9 = exon9.c,
+                              exon10 = exon10.c,
+                              full.coverage = full))
+}
+
+# 3. Normalize results by the full gene coverage
+# log10 ratio
+PKM.coverage <- PKM.coverage %>%
+  rowwise() %>%
+  mutate(exon9.norm = log1p(exon9 / full.coverage), 
+         exon10.norm = log1p(exon10 / full.coverage)) %>%
+  ungroup() %>%
+  mutate(exon9.norm = ifelse(exon9.norm == -Inf | is.na(exon9.norm), 0, exon9.norm),
+         exon10.norm = ifelse(exon10.norm == -Inf | is.na(exon10.norm), 0, exon10.norm),
+         ratio = log10(exon9.norm / exon10.norm),
+         ratio = ifelse(is.na(ratio) | ratio == Inf, 0, ratio))
+
+# 4. Visualize results
+PKM.coverage <- data.frame(PKM.coverage)
+row.names(PKM.coverage) <- paste0("X", PKM.coverage$ID)
+ssce.FS.all <- AddMetaData(ssce.FS.all, PKM.coverage)
+
+p.exon <- plot_grid(rel_widths = c(0.66,0.33),
+                    FeaturePlot(ssce.FS.all  , c("exon9.norm", "exon10.norm"), ncol = 2) & 
+                      scale_colour_gradientn(colours = c(NA, RColorBrewer::brewer.pal(n = 8, name = "YlGnBu"))) &
+                      theme(legend.position = "bottom", legend.text = element_text(angle = 45, hjust = 1)),
+                    FeaturePlot(ssce.FS.all, c("ratio"), ncol = 1, max.cutoff = 5) & 
+                      scale_colour_gradientn(colours = c(RColorBrewer::brewer.pal(n = 8, name = "Spectral"))) &
+                      theme(legend.position = "bottom", legend.text = element_text(angle = 45, hjust = 1)))
+
+
+ggsave(p.exon, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_PKM_exons.tiff", dpi = 200, height = 6, width = 16, bg = "white")
+
+VlnPlot(ssce.FS.all, c("ratio")) +
+  scale_fill_manual(values = celltype.colors()) +
+  geom_hline(yintercept = 0, linetype = "dotted", color = "red") +
+  xlab("")
+
+# 5. Visualize interesting PKM isoforms (salmon counts) on a featureplot
+# Not used in the final manuscripts
+PKM <- c("ENST00000568883.5", "ENST00000335181.10", "ENST00000561609.5", "ENST00000564993.1", "ENST00000568459.5", "ENST00000569857.5")
+
+ggsave(FeaturePlot(ssce, features = PKM, ncol = 2) & scale_color_viridis_c(), 
+       filename =  "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/PKM.featurePlot.tiff", dpi = 200, height = 12, width = 8)
+
+PKM.info <- data_frame(
+  transcript_id = c("ENST00000568883.5","ENST00000335181.10","ENST00000561609.5","ENST00000564993.1","ENST00000568459.5","ENST00000569857.5"),
+  transcript_name = c("PKM-221","PKM-202","PKM-204","PKM-212","PKM-219","PKM-223"),
+  info = c("protein_coding", "protein_coding","CDS incomplete","retained_intron","protein_coding","mediated_decay"),
+  exon = c("PKM2", "PKM1", "PKM2", "", "PKM2", "")
+)
+
+```
+
+
+```{r FS - various checkups, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
+
+# 3. Explore Statistics
+plot_grid(nrow = 1,
+  ggplot(star.internal, aes(x = PLATE, y = as.numeric(P_uniquely_mapped_reads))) + geom_boxplot() + 
+    scale_y_continuous(breaks =seq(0,100,10)) + theme_bw() + xlab("PLATE") + ylab("Uniquely mapped"),
+  ggplot(star.internal, aes(x = PLATE, y = as.numeric(P_multiple_Loci ))) + geom_boxplot() + 
+    scale_y_continuous(breaks =seq(0,100,10)) + theme_bw() + xlab("PLATE") + ylab("Multi mapped"),
+  ggplot(star.internal, aes(x = PLATE, y = as.numeric(P_too_short_read))) + geom_boxplot() + 
+    scale_y_continuous(breaks =seq(0,100,10)) + theme_bw() + xlab("PLATE") + ylab("Too short"))
+
+exons <- data_frame(
+  ID = colnames(exon.counts),
+  count_0 = apply(counts(exon.counts), 2, function(x) sum(x > 0)),
+  count_1 = apply(counts(exon.counts), 2, function(x) sum(x > 1)),
+  count_5 = apply(counts(exon.counts), 2, function(x) sum(x > 5))) %>%
+  mutate(PLATE = str_split(ID, "_", simplify = T)[,1])
+
+plot_grid(nrow = 1,
+  ggplot(exons, aes(x = PLATE, y = as.numeric(count_0))) + geom_boxplot() + 
+    scale_y_continuous(breaks =seq(0,100,10)) + theme_bw() + xlab("PLATE") + ylab("count_0"),
+  ggplot(exons, aes(x = PLATE, y = as.numeric(count_1 ))) + geom_boxplot() + 
+    scale_y_continuous(breaks =seq(0,100,10)) + theme_bw() + xlab("PLATE") + ylab("count_1"),
+  ggplot(exons, aes(x = PLATE, y = as.numeric(count_5))) + geom_boxplot() + 
+    scale_y_continuous(breaks =seq(0,100,10)) + theme_bw() + xlab("PLATE") + ylab("count_5"))
+
+# Coverage
+p.coverage <- bind_rows(
+  ReSQC.cov.umi %>% mutate(TYPE = "UMI"),
+  ReSQC.cov.internal %>% mutate(TYPE = "INTERNAL")) %>%
+  gather(Percentile, reads, -ID, -PLATE, -TYPE) %>%
+  filter(reads > 0) %>%
+  group_by(ID, PLATE, TYPE) %>%
+  mutate(percentage = 100*reads / sum(reads)) %>%
+  group_by(PLATE, Percentile, TYPE) %>%
+  summarise(mean.c = mean(percentage),
+            sd.c = sd(percentage)) %>%
+  ungroup() %>%
+  mutate(Percentile = as.numeric(Percentile)) %>%
+  # 4. Plot the results
+  ggplot(aes(x = as.numeric(Percentile), color = as.factor(PLATE), fill = as.factor(PLATE))) +
+      geom_ribbon(aes(ymin = mean.c - sd.c, ymax = mean.c + sd.c), colour = NA) +
+      geom_line(aes(y=mean.c), size = 1.25) +
+      scale_color_manual(values = mycolors) +
+      facet_wrap(~ TYPE, scales = "free_y", ncol = 3) +
+      scale_fill_manual(values = alpha(mycolors, 0.15)) +
+      xlab("Gene Body Percentile (5'->3')") +
+      ylab("Coverage Percentage") +
+      theme_cowplot(font_size = 28) +
+      theme(legend.title = element_blank(),
+            legend.position = "bottom",
+            legend.text = element_text(size = 19),
+            strip.text.x = element_text(size = 24),
+            rect = element_rect(size = 0.75, color = "black"), 
+          panel.border = element_rect(size = 0.75, color = "black"), 
+          axis.text.x = element_text(size = 21),
+          strip.text = element_text(face = "bold"),
+          panel.grid.major.y = element_line(linetype = "dotted", color = "darkgrey", size = 0.5),
+          axis.line.y.right = element_line(color = "black", linetype = "solid", size = 1)) +
+    guides(color= guide_legend(ncol=4,byrow=TRUE))
+
+
+# Read Distribution
+bind_rows(ReSQC.distr.umi %>% mutate(TYPE = "UMI"), 
+          ReSQC.distr.internal %>% mutate(TYPE = "INTERNAL")) %>%
+    gather(distribution, val, -ID, -PLATE, -TYPE) %>%
+    filter(!distribution %in% c("TSS_up_1kb", "TSS_up_5kb", "TSS_down_1kb", "TSS_down_1kb",  "TES_down_10kb", "TES_down_1kb" , "TES_down_5kb", "TSS_up_10kb", "totalReadTags")) %>%
+    mutate(distribution = case_when(distribution == "UTR5_Exons" ~ "5'UTR Exons",
+                                    distribution == "UTR3_Exons" ~ "3'UTR Exons",
+                                    distribution == "CDS_Exons" ~ "CDS Exons",
+                                    distribution == "Introns" ~ "Introns",
+                                    distribution == "Intergenic" ~ "Intergenic"),
+           facet = paste0(distribution, "\n", TYPE)) %>%
+    group_by(PLATE, ID, TYPE) %>%
+    mutate(total = sum(val)) %>%
+    ungroup() %>%
+    mutate(perc = 100*val / total,
+           GROUP = factor(PLATE)) %>%
+  ggplot() +
+  geom_boxplot(aes(y = perc, x = GROUP, fill = distribution), width = 0.6) +
+    facet_wrap(~ facet, scales = "free_y", ncol = 2) +
+    scale_fill_manual(values = c("CDS Exons" = "#1B9E77", 
+                                 "Introns" =  "#D95F02", 
+                                 "5'UTR Exons" =  "#7570B3",
+                                 "3'UTR Exons" =  "#E7298A",
+                                 "Intergenic" =  "#66A61E")) +
+    ylab("Percentage Reads") + 
+    xlab("") +
+    #scale_y_continuous(breaks = scaleY, limits = c(min(scaleY), max(scaleY))) +
+    xlab("") +
+    theme_cowplot(font_size = 20) +
+    theme(legend.position = "none", 
+          strip.background = element_rect(size = 0.75, color = "black"), 
+          panel.border = element_rect(size = 0.75, color = "black"), 
+          axis.text.x = element_text(size = 16, angle = 45, hjust = 1),
+          strip.text = element_text(face = "bold"),
+          panel.grid.major.y = element_line(linetype = "dotted", color = "darkgrey", size = 0.5),
+          axis.line.y.right = element_line(color = "black", linetype = "solid", size = 1))
+
+
+
+```
+
+# Resequencing
+
+Plate 316 was resequenced to obtain enough reads to shows the downsamplings
+
+```{FS - Aggregate Files RESQUENCING, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
+options(scipen=999)
+source("/home/vincent.hahaut/Desktop/FLASH-Seq/R/general/4_aggregate_files_functions.R")
+seqPaths <- c("/home/vincent.hahaut/data_storage/ORGANOIDS/STAR_DEEP/")
+
+# 1. Aggregate info
+mydate <- Sys.Date()
+
+# 1.0. All Reads - featurecounts
+paths.featurecounts <- makePath(seqPaths = seqPaths, suffix = "FEATURECOUNTS/ID_ALL_featureCounts.gencode.EXON.txt")
+featurecounts.exon <- getFeatureCount(paths = paths.featurecounts$paths, sample.ids = paths.featurecounts$sample.ids, threads = 10)
+write_rds(featurecounts.exon, file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_DEEP_featureCounts.exons.all.", mydate, ".rds"))
+
+# 1.1. Exon Internal featurecounts
+paths.featurecounts <- makePath(seqPaths = seqPaths, suffix = "FEATURECOUNTS/ID_INTERNAL_featureCounts.gencode.EXON.txt")
+featurecounts.exon <- getFeatureCount(paths = paths.featurecounts$paths, sample.ids = paths.featurecounts$sample.ids, threads = 10)
+write_rds(featurecounts.exon, file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_DEEP_featureCounts.exons.internal.", mydate, ".rds"))
+
+# 1.2. Exon Internal featurecounts - downsample
+ids <- list.files("/home/vincent.hahaut/data_storage/ORGANOIDS/STAR/")
+paths.featurecounts <- sapply(c(5000,10000,20000,40000,50000,75000,100000,125000,150000,200000,300000,400000,500000), function(x) paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/STAR_DEEP/", ids, "/DOWNSAMPLE/DOWN_", x, "/FEATURECOUNTS/", ids, "_INTERNAL_", x, ".feature.EXON.txt"))
+feature.ids <- paste0(str_split(paths.featurecounts, "/", simplify = TRUE)[,7], "_", str_replace(str_split(paths.featurecounts, "/", simplify = TRUE)[,9], "DOWN_", ""))
+#
+featurecounts.exon <- getFeatureCount(paths = paths.featurecounts, sample.ids = feature.ids, threads = 10)
+write_rds(featurecounts.exon, file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_DEEP_featureCounts.exons.internal.downsample.", mydate, ".rds"))
+
+# 1.3. Exon UMI counts
+paths.umi.counts <- makePath(seqPaths = seqPaths, suffix = "FEATURECOUNTS/ID.umi.counts.tsv.gz")
+umi.exon <- getUMICounts(paths = paths.umi.counts$paths, sample.ids = paths.umi.counts$sample.ids)
+write_rds(umi.exon, file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_DEEP_umiCounts.exons.", mydate, ".rds"))
+
+# 1.4 . Exon UMI counts - downsample
+ids <- list.files("/home/vincent.hahaut/data_storage/ORGANOIDS/STAR/")
+paths.umi.counts <- sapply(c(5000,10000,20000,40000,50000,75000,100000,125000,150000,200000,300000,400000,500000), function(x) paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/STAR_DEEP/", ids, "/DOWNSAMPLE/DOWN_", x, "/FEATURECOUNTS/", ids, ".umi.counts.", x ,".tsv.gz"))
+umi.ids <- paste0(str_split(paths.umi.counts, "/", simplify = TRUE)[,7], "_", str_replace(str_split(paths.umi.counts, "/", simplify = TRUE)[,9], "DOWN_", ""))
+umi.ids <- umi.ids[file.exists(paths.umi.counts) & file.info(paths.umi.counts)$size > 100]
+paths.umi.counts <- paths.umi.counts[file.exists(paths.umi.counts) & file.info(paths.umi.counts)$size > 100]
+#
+umi.down.ex <- getUMICounts(paths = paths.umi.counts, sample.ids = umi.ids)
+write_rds(umi.down.ex, file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_DEEP_umiCounts.exons.downsample.", mydate, ".rds.bz"), compress = "bz")
+
+# 1.5. Mapping infos - UMI
+paths.STAR.log.umi <- makePath(seqPaths = seqPaths, suffix = "STAR/ID_UMI_Log.final.out")
+STAR.log <- getSTARLog(paths = paths.STAR.log.umi$paths, sample.ids = paths.STAR.log.umi$sample.ids, threads = 10)
+write_rds(STAR.log, file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_DEEP_STAR.logs.umi.", mydate, ".rds"))
+
+# 1.6. Mapping infos - INTERNAL
+paths.STAR.log.internal <- makePath(seqPaths = seqPaths, suffix = "STAR/ID_INTERNAL_Log.final.out")
+STAR.log <- getSTARLog(paths = paths.STAR.log.internal$paths, sample.ids = paths.STAR.log.internal$sample.ids, threads = 10)
+write_rds(STAR.log, file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_DEEP_STAR.logs.internal.", mydate, ".rds"))
+
+# 1.7. ReSQC - read distribution - UMI
+paths.ReSQC.distr <- makePath(seqPaths = seqPaths, suffix = "ReSQC/ID_UMI_readDistribution.txt")
+ReSQC.distr <- getRESeQC_readDistribution(paths = paths.ReSQC.distr$paths, sample.ids = paths.ReSQC.distr$sample.ids, threads = 10)
+write_rds(ReSQC.distr, file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_DEEP_ReSQC.distribution.umi.", mydate, ".rds"))
+
+# 1.8. ReSQC - read distribution - INTERNAL
+paths.ReSQC.distr <- makePath(seqPaths = seqPaths, suffix = "ReSQC/ID_INTERNAL_readDistribution.txt")
+ReSQC.distr <- getRESeQC_readDistribution(paths = paths.ReSQC.distr$paths, sample.ids = paths.ReSQC.distr$sample.ids, threads = 10)
+write_rds(ReSQC.distr, file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_DEEP_ReSQC.distribution.internal.", mydate, ".rds"))
+
+# 1.9. Salmon ALL
+salmon.path <- makePath(seqPaths = seqPaths, suffix = "STAR/ID_salmon_ALL_TRANSCRIPTS/quant.sf")
+salmon <- getSalmon(paths = salmon.path$paths, sample.ids = salmon.path$sample.ids, gtf = "/home/vincent.hahaut/data_storage/REFERENCES/hsap_fastsmart/REFERENCE/GTF/gencode.v34.primary_assembly.annotation.gtf", txOUT = TRUE, limma = TRUE)
+write_rds(salmon, file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_DEEP_salmon.all.", mydate, ".rds"))
+
+# 1.11. Salmon downsample
+ids <- list.files("/home/vincent.hahaut/data_storage/ORGANOIDS/STAR_DEEP/")
+salmon.path <- sapply(c(5000,10000,20000,40000,50000,75000,100000,125000,150000,200000,300000,400000,500000), function(x) paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/STAR_DEEP/", ids, "/DOWNSAMPLE/DOWN_", x, "/STAR/", ids, "_salmon_INTERNAL_", x, "_TRANSCRIPTS/quant.sf"))
+salmon.ids <- paste0(str_split(salmon.path, "/", simplify = TRUE)[,7], "_", str_replace(str_split(salmon.path, "/", simplify = TRUE)[,9], "DOWN_", ""))
+salmon <- getSalmon(paths = salmon.path, sample.ids = salmon.ids, gtf = "/home/vincent.hahaut/data_storage/REFERENCES/hsap_fastsmart/REFERENCE/GTF/gencode.v34.primary_assembly.annotation.gtf", txOUT = TRUE)
+write_rds(salmon, file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_DEEP_salmon.downsample.", mydate, ".rds"))
+
+```
+
+```{r read results 2, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
+mydate <- "2021-12-10"
+
+# 1. Mapping Statistics
+STAR.log.internal <- read_rds(file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_DEEP_STAR.logs.internal.", mydate, ".rds"))
+index <- as.vector(filter(STAR.log.internal, as.numeric(P_uniquely_mapped_reads) > 60 & as.numeric(P_too_short_read) < 20 & as.numeric(N_raw_reads) > 100000)$ID)  
+
+# 2. Load the Data
+featurecounts.exon.down <- read_rds(file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_DEEP_featureCounts.exons.internal.downsample.", mydate, ".rds"))
+umi.exon.down <- read_rds(file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_DEEP_umiCounts.exons.downsample.", mydate, ".rds.bz"))
+salmon.down <- read_rds(file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_ORGANOIDS_DEEP_salmon.downsample.", mydate, ".rds"))
+
+# 3. Remove low quality cells
+featurecounts.exon.down <- featurecounts.exon.down[,str_replace(colnames(featurecounts.exon.down), "_([^_]+$)", "") %in% paste0("X", str_replace(index, "-", "\\."))]
+umi.exon.down <- umi.exon.down[,str_replace(colnames(umi.exon.down), "_([^_]+$)", "") %in% index]
+salmon.down <- salmon.down[,str_replace(colnames(salmon.down), "_([^_]+$)", "") %in% index]
+
+```
+
+
+```{r feature downsamplings, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
+
+
+ssce.FS.all <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.all.ssce.rds")
+
+# Features - Genes
+featurecounts.exon.down$cell_type <- ssce.FS.all$cell_type[match(
+  str_replace(colnames(featurecounts.exon.down), "_([^_]+$)", ""),
+              colnames(ssce.FS.all))]
+
+mycounts <- data_frame(
+  cell_type = featurecounts.exon.down$cell_type,
+  `>0 read` = colSums(counts(featurecounts.exon.down) > 0),
+  `>1 read` = colSums(counts(featurecounts.exon.down) > 1),
+  `>5 reads` = colSums(counts(featurecounts.exon.down) > 5),
+  DEPTH = str_extract(colnames(featurecounts.exon.down), "([^_]+$)")) %>%
+  filter(!is.na(cell_type)) %>%
+  group_by(cell_type, DEPTH) %>%
+  mutate(n = n()) %>%
+  ungroup() %>%
+  filter(n > 2, cell_type != "Apoptotic Cells") %>%
+  dplyr::select(-n) %>%
+  pivot_longer(-c(DEPTH, cell_type)) %>%
+  group_by(DEPTH, name, cell_type) %>%
+  summarise(m = mean(value),
+            s = sd(value)) %>%
+  ungroup() %>%
+  mutate(DEPTH = as.numeric(DEPTH))
+
+p.internal <- ggplot(mycounts, aes(x = DEPTH, group = cell_type, color = cell_type)) +
+  facet_wrap("name") +
+  theme_bw(base_size = 20) +
+  geom_point(aes(y = m)) +
+  geom_line(aes(y = m)) +
+  geom_errorbar(aes(ymin = m-s, ymax =m+s)) +
+  scale_color_manual(values = celltype.colors()) +
+  scale_y_continuous(breaks = seq(0,7000,1000)) +
+  theme(legend.position = "none", axis.text.x = element_text(size = 12, angle = 45, hjust = 1)) +
+  scale_x_continuous(breaks = c(5000,10000,20000,40000,50000,75000,100000,125000,150000,200000,300000,400000,500000), 
+                     labels = c("","","","","50K","75K","100K","125K","150K","200K","300K","400K","500K")) +
+  xlab("Downsampled Reads") + ylab("Detected Genes") + ggtitle("Internal Reads")
+
+# Features - Isoforms
+salmon.down$cell_type <- ssce.FS.all$cell_type[match(
+    paste0("X", str_replace(colnames(salmon.down), "_([^_]+$)", "")),
+    colnames(ssce.FS.all))]
+
+mycounts <- data_frame(
+  cell_type = salmon.down$cell_type,
+  `>0 TPM` = colSums(assay(salmon.down, "abundance") > 0),
+  `>1 TPM` = colSums(assay(salmon.down, "abundance") > 1),
+  `>5 TPM` = colSums(assay(salmon.down, "abundance") > 5),
+  DEPTH = str_extract(colnames(salmon.down), "([^_]+$)")) %>%
+  filter(!is.na(cell_type)) %>%
+  group_by(cell_type, DEPTH) %>%
+  mutate(n = n()) %>%
+  ungroup() %>%
+  filter(n > 2, cell_type != "Apoptotic Cells") %>%
+  dplyr::select(-n) %>%
+  pivot_longer(-c(DEPTH, cell_type)) %>%
+  group_by(DEPTH, name, cell_type) %>%
+  summarise(m = mean(value),
+            s = sd(value)) %>%
+  ungroup() %>%
+  mutate(DEPTH = as.numeric(DEPTH))
+
+p.isoforms <- ggplot(mycounts, aes(x = DEPTH, group = cell_type, color = cell_type)) +
+  facet_wrap("name") +
+  theme_bw(base_size = 20) +
+  geom_point(aes(y = m)) +
+  geom_line(aes(y = m)) +
+  geom_errorbar(aes(ymin = m-s, ymax =m+s)) +
+  scale_color_manual(values = celltype.colors()) +
+  scale_y_continuous(breaks = seq(0,12000,2000)) +
+  theme(legend.position = "none", axis.text.x = element_text(size = 12, angle = 45, hjust = 1)) +
+  scale_x_continuous(breaks = c(5000,10000,20000,40000,50000,75000,100000,125000,150000,200000,300000,400000,500000), 
+                     labels = c("","","","","50K","75K","100K","125K","150K","200K","300K","400K","500K")) +
+  xlab("Downsampled Reads") + ylab("Detected Isoforms") + ggtitle("Isoforms")
+
+# Features - UMI
+umi.exon.down$cell_type <- ssce.FS.all$cell_type[match(
+    paste0("X", str_replace(colnames(umi.exon.down), "_([^_]+$)", "")),
+    colnames(ssce.FS.all))]
+
+mycounts <- data_frame(
+  cell_type = umi.exon.down$cell_type,
+  `>0 read` = colSums(counts(umi.exon.down) > 0),
+  `>1 read` = colSums(counts(umi.exon.down) > 1),
+  `>5 reads` = colSums(counts(umi.exon.down) > 5),
+  DEPTH = str_extract(colnames(umi.exon.down), "([^_]+$)")) %>%
+  filter(!is.na(cell_type)) %>%
+  group_by(cell_type, DEPTH) %>%
+  mutate(n = n()) %>%
+  ungroup() %>%
+  filter(n > 2, cell_type != "Apoptotic Cells") %>%
+  dplyr::select(-n) %>%
+  pivot_longer(-c(DEPTH, cell_type)) %>%
+  group_by(DEPTH, name, cell_type) %>%
+  summarise(m = mean(value),
+            s = sd(value)) %>%
+  ungroup() %>%
+  mutate(DEPTH = as.numeric(DEPTH))
+
+p.umi <- ggplot(mycounts, aes(x = DEPTH, group = cell_type, color = cell_type)) +
+  facet_wrap("name") +
+  theme_bw(base_size = 20) +
+  geom_point(aes(y = m)) +
+  geom_line(aes(y = m)) +
+  geom_errorbar(aes(ymin = m-s, ymax =m+s)) +
+  scale_color_manual(values = celltype.colors()) +
+  scale_y_continuous(breaks = seq(0,7000,1000)) +
+  theme(legend.position = "none", axis.text.x = element_text(size = 12, angle = 45, hjust = 1)) +
+  scale_x_continuous(breaks = c(5000,10000,20000,40000,50000,75000,100000,125000,150000,200000,300000,400000,500000), 
+                     labels = c("","","","","50K","75K","100K","125K","150K","200K","300K","400K","500K")) +
+  xlab("Downsampled Reads") + ylab("Detected Genes") + ggtitle("UMI Reads")
+
+
+ggsave(
+  plot_grid(p.internal, p.umi, p.isoforms, nrow = 3), filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/downsampling.tiff", 
+  dpi = 300, height = 14, width = 16, bg= "white")
+```
+
+```{r umi - internal relationship, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
+
+# 1. Synchronise UMI vs Internal gene counts
+internal <- counts(featurecounts.exon.down)[row.names(featurecounts.exon.down) %in% row.names(umi.exon.down),] %>%
+  rownames_to_column("gene") %>%
+  pivot_longer(-gene, values_to = "internal", names_to = "ID") %>%
+  mutate(ID = str_replace(ID, "^X", ""))
+umi <- counts(umi.exon.down) %>%
+  rownames_to_column("gene") %>%
+  pivot_longer(-gene, values_to = "umi", names_to = "ID")
+
+internal <- filter(internal, internal != 0)
+umi <- filter(umi, umi != 0)
+
+umi_internal <- left_join(internal, umi, by = c("gene", "ID")) %>%
+  mutate(DEPTH = str_extract(pattern = "([^_]+$)", string = ID))
+
+umi_internal[is.na(umi_internal)] <- 0
+
+
+# 2. Correlations
+mycors <- sapply(c("5000","10000","20000","40000","50000","75000","100000","125000","150000","200000"), function(x)
+  pcaPP::cor.fk(filter(umi_internal, DEPTH == x, internal >0 & umi>0)$internal, filter(umi_internal, DEPTH == x, internal >0 & umi>0)$umi))
+
+mycors2 <- sapply(c("5000","10000","20000","40000","50000","75000","100000","125000","150000","200000"), function(x)
+  broom::tidy(cor.test(method = "pearson", filter(umi_internal, DEPTH == x, internal >0 & umi>0)$internal, filter(umi_internal, DEPTH == x, internal >0 & umi>0)$umi))$estimate)
+
+mycors.df <- bind_cols(mycors %>%
+                         data.frame() %>%
+                         rownames_to_column("DEPTH"),
+                       mycors2 %>%
+                         as.data.frame()) %>%
+  dplyr::rename("kendall" = "....2", "pearson" = "....3") %>%
+  left_join(umi_internal %>% 
+              filter(internal >0 & umi>0) %>%
+              group_by(DEPTH) %>% summarise(n = length(unique(ID))), by = "DEPTH") %>%
+  mutate(x = 4,
+         y = 7, 
+         label = paste0("pearson: ", round(pearson, 4), "\n",
+                        "tau: ", round(kendall, 4), "\n",
+                        "nCells: ", n)) %>%
+  filter(DEPTH != "300000") %>%
+  mutate(DEPTH = factor(DEPTH, levels = c("5000","10000","20000","40000","50000","75000","100000","125000","150000","200000")))
+
+# 3. Visualization
+umi_internal$DEPTH <- factor(umi_internal$DEPTH, levels = c("5000","10000","20000","40000","50000","75000","100000","125000","150000","200000","300000"))
+
+z <- ggplot() +
+  geom_abline(color = "darkred", linetype = "dashed", slope = 1, intercept = 0) +
+  geom_bin2d(data = filter(umi_internal, DEPTH != "300000", internal >0 & umi>0), aes(log1p(internal), log1p(umi)), bins = 100) + 
+  facet_wrap(~DEPTH, nrow = 2) +
+  theme_bw(base_size = 20) +
+  scale_color_viridis_d() +
+  theme(legend.position = "none") +
+  xlab("Detected Genes (log1p, Internal)") + ylab("Detected Genes (log1p, UMI)") + 
+  xlim(c(0,7.5)) + 
+  ylim(c(0,7.5)) +
+  geom_text(data = mycors.df, aes(x = 0, y = y, label = label), hjust = 0, size = 3.5)
+  
+ggsave(z, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/correlation_umi_internal.tiff", bg = "white", dpi = 300, height = 7, width = 14)
+
+
+```
+
+```{r export data, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
+
+ssce.FS.umi <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.umi.ssce.rds")
+ssce.FS.internal <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.internal.ssce.rds")
+ssce.FS.all <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.all.ssce.rds")
+
+dt.FS.umi <- as.matrix(GetAssayData(ssce.FS.umi, slot = "data"))
+dt.FS.internal <- as.matrix(GetAssayData(ssce.FS.internal, slot = "data"))
+dt.FS.all <- as.matrix(GetAssayData(ssce.FS.all, slot = "data"))
+
+meta.data <- ssce.FS.all@meta.data %>%
+  select(-orig.ident) %>%
+  rownames_to_column("orig.ident") %>%
+  select(-c("nCount_SCT", "nFeature_SCT", "SCT_snn_res.1.5", "seurat_clusters", "nCount_RNA", "nFeature_RNA"))
+
+write.table(dt.FS.umi, "/home/vincent.hahaut/data_storage/transfer/FS_w18organoids_umiReads.txt", sep = "\t", col.names = NA, row.names = T, quote = F)
+write.table(dt.FS.internal, "/home/vincent.hahaut/data_storage/transfer/FS_w18organoids_internalReads.txt", sep = "\t", col.names = NA, row.names = T, quote = F)
+write.table(dt.FS.all, "/home/vincent.hahaut/data_storage/transfer/FS_w18organoids_allReads.txt", sep = "\t", col.names = NA, row.names = T, quote = F)
+
+write.table(meta.data, "/home/vincent.hahaut/data_storage/transfer/FS_w18organoids_metadata.txt", sep = "\t", col.names = T, quote = F)
+```
+
+
+
+
+
+```{r cell types 2, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
+
+# Not used in the paper but shows the same separation as all the cells together
+source("~/Desktop/FLASH-Seq/R/General/8_SingleCell_functions.R")
+library(Seurat)
+
+# 0. Select Genes
+unwanted <- gtf %>% filter(gene_type %in% c("rRNA_pseudogene", "rRNA", "Mt_rRNA") | grepl("^RPL|^RPS|MALAT1", gene_name)) %>% dplyr::select(gene_name, transcript_id) %>% pivot_longer(cols = c(gene_name, transcript_id)) %>% dplyr::select(value) %>% distinct()
+
+# 2. Process the data
+ssce.FS.internal <- basicSeurat(
+  Seurat::CreateSeuratObject(counts = counts(featurecounts.exon)[!row.names(featurecounts.exon) %in% unwanted$value,]), 
+  rv.th = 5, nfeatures = NULL, npcs = 5, SCT = TRUE, resolution = 1, var.to.regress = "nCount_RNA")
+#markers.internal <- FindAllMarkers(ssce.FS.internal, test.use = "MAST", logfc.threshold = 0.5, only.pos = TRUE)
+write_rds(ssce.FS.internal, "/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.DEEP.ssce.rds")
+#write.table(markers.internal, sep = "\t", "/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.DEEP.internal.markers.txt", row.names = FALSE, quote = FALSE)
+
+ssce.FS.umi <- basicSeurat(
+  Seurat::CreateSeuratObject(counts = counts(umi.exon)[!row.names(umi.exon) %in% unwanted$value,]), 
+  rv.th = 2.5, nfeatures = NULL, npcs = 12, SCT = TRUE, resolution = 2, var.to.regress = "nCount_RNA")
+#markers.umi <- FindAllMarkers(ssce.FS.umi, test.use = "MAST", logfc.threshold = 0.5, only.pos = TRUE)
+write_rds(ssce.FS.umi, "/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.DEEP.umi.ssce.rds")
+#write.table(markers.umi, sep = "\t", "/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.DEEP.umi.markers.txt", row.names = FALSE, quote = FALSE)
+
+ssce.FS.all <- basicSeurat(
+  Seurat::CreateSeuratObject(counts = counts(featurecounts.all)[!row.names(featurecounts.all) %in% unwanted$value,]), 
+  rv.th = 5, nfeatures = NULL, npcs = 12, SCT = TRUE, resolution = 1.5, var.to.regress = "nCount_RNA")
+#markers.all <- FindAllMarkers(ssce.FS.all, test.use = "MAST", logfc.threshold = 0.5, only.pos = TRUE)
+write_rds(ssce.FS.all, "/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.DEEP.all.ssce.rds")
+#write.table(markers.all, sep = "\t", "/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.DEEP.all.markers.txt", row.names = FALSE, quote = FALSE)
+```

@@ -1,0 +1,68 @@
+Protocol step	Condition tested	Effect	Comment
+Lysis Mix	1.2% Triton	darkred	Increases the amount of multi-mapped reads
+Lysis Mix	0.2% Triton	green	Optimal condition
+Lysis Mix	1 mg/mL BSA	goldenrod1	Unclear, might depend on reaction volume and/or cell type
+Lysis Mix	1 mg/mL BSA + 0.2% Triton	grey70	No benefit vs Triton alone
+Lysis Mix	250 mM GuHCl	darkolivegreen1	Might be beneficial, skip RNAse inhibitor / nuclear lysis (?)
+Lysis Mix	FS oligodT - 2 uM1	darkolivegreen1	Works for large cells but might not be necessary
+Lysis Mix	FS oligodT - 0.4 uM (1)	green	Optimal condition for large and small cells
+Lysis Mix	FS oligodT - 0.2 uM (1)	darkolivegreen1	Works for small cells only
+Lysis Mix	FS oligodT - 0.04 uM (1)	darkred	Insufficient even for small cells
+Lysis Mix	dNTP conc - 0.3 mM (5)	darkred	Significant reduction in the number of detected genes
+Lysis Mix	dNTP conc - 1.5 mM (5)	green	Optimal condition
+Lysis & mRNA denaturation	72°C - 3 min	green	Optimal condition
+Lysis & mRNA denaturation	72°C - 10 min	grey70	No benefit or slightly deleterious
+Lysis & mRNA denaturation	95°C - 3 min	darkred	May favor rna degradation
+RT-PCR Mix	Addition of 20 mM NaCl (2)	grey70	No benefit
+RT-PCR Mix	Addition of 30 mM NaCl (2)	grey70	No benefit
+RT-PCR Mix	Addition of 40 mM NaCl (2)	darkred	Inhibits the reaction
+RT-PCR Mix	Addition of 1 mM GTP / no dCTP	darkred	Decreases reaction efficiency
+RT-PCR Mix	Superscript IV in RT	green	Optimal enzyme
+RT-PCR Mix	Maxima H- in RT	green	Optimal enzyme
+RT-PCR Mix	FS TSO - 2 uM (3)	green	Optimal condition for most applications
+RT-PCR Mix	FS TSO - 3 uM (3)	darkolivegreen1	Performs just slightly worse than 2 uM
+RT-PCR Mix	FS TSO - 4 uM (3)	darkred	Increases the amount of multi-mapped reads
+RT-PCR Mix	FS TSO - 6 uM (3)	darkred	Increases the amount of multi-mapped reads
+RT-PCR Mix	FS TSO - 8 uM (3)	darkred	Increases the amount of multi-mapped reads
+RT-PCR Mix	FS TSO - 10 uM (3)	darkred	Increases the amount of multi-mapped reads.
+RT-PCR Mix	Ficoll-400 - 4% v/v (4)	grey70	No benefit
+RT-PCR Mix	Betaine - 1M final	green	Optimal condition
+RT-PCR Mix	Betaine - complete removal	darkred	Significantly worse performance
+RT-PCR Mix	dCTP - no extra dCTP added	darkolivegreen1	Works fine but not optimal
+RT-PCR Mix	dCTP - 1.65 mM dCTP extra	darkolivegreen1	Works fine but not optimal
+RT-PCR Mix	dCTP - 3.3 mM dCTP extra	green	Optimal condition
+RT-PCR Mix	dCTP - 5.5 mM dCTP extra	darkolivegreen1	Works very well but can slightly decreases the uniquely mapped reads
+RT-PCR Mix	dCTP - 8.25 mM dCTP extra	darkred	Increases the amount of multi-mapped and intergenic reads
+RT-PCR Mix	dCTP - 11.1 mM dCTP extra	darkred	Increases the amount of multi-mapped and intergenic reads
+RT-PCR Mix	Pfu DNA Pol - 0.25 U/rxn	grey70	No benefit
+RT-PCR Mix	Pfu DNA Pol - 0.375 U/rxn	grey70	No benefit
+RT-PCR Mix	ET SSB - 40 ng	grey70	No benefit
+RT-PCR Mix	ET SSB - 80 ng	grey70	No benefit
+RT-PCR Mix	ET SSB - 160 ng	grey70	No benefit
+RT-PCR Mix	ET SSB - 250 ng	darkred	Inhibits the reaction
+RT-PCR Mix	T4g32 protein - 5 ug + RT at 50°C - 25 ul rxn	grey70	No benefit
+RT-PCR Mix	T4g32 protein - 5 ug - 25 ul rxn	darkred	Increases the amount of multi-mapped and intergenic reads
+RT-PCR Mix	T4g32 protein - 0.125 ug - 5 ul rxn	grey70	No benefit
+RT-PCR Mix	T4g32 protein - 0.25 ug - 5 ul rxn	grey70	No benefit
+RT-PCR Mix	T4g32 protein - 0.50 ug - 5 ul rxn	grey70	No benefit
+RT-PCR Mix	T4g32 protein - 0.75 ug - 5 ul rxn	grey70	No benefit
+RT-PCR Mix	T4g32 protein - 1 ug - 5 ul rxn	darkred	Increases the amount of unmapped reads
+RT-PCR Mix	T4g32 protein - 0.25 ug + 0.4 uM FS oligodT1 - 5 ul rxn	grey70	No benefit
+RT-PCR Mix	T4g32 protein - 0.25 ug + 0.02 uM FS oligodT1 + 5 ul rxn	grey70	No benefit
+RT-PCR Mix	T4g32 protein - 0.25 ug + Maxima - 5 ul rxn	grey70	No benefit
+RT-PCR Mix	T4g32 protein - 0.50 ug + Maxima - 5 ul rxn	grey70	No benefit
+RT-PCR Mix	T4g32 protein - 0.75 ug + Maxima - 5 ul rxn	grey70	No benefit
+RT-PCR Mix	T4g32 protein - 0.25 ug - 5 ul rxn - RT 30 min	darkred	Reduction in the number of detected genes
+RT-PCR Mix	T4g32 protein - 0.50 ug - 5 ul rxn - RT 30 min	darkred	Reduction in the number of detected genes
+RT-PCR Mix	T4g32 protein - 0.75 ug - 5 ul rxn - RT 30 min	darkred	Reduction in the number of detected genes
+RT-PCR Mix	T4g32 protein - 0.25 ug - 5 ul rxn - 1.2% Triton (lysis)	darkred	Reduction in the number of detected genes
+RT-PCR Mix	T4g32 protein - 0.5 ug - 5 ul rxn - 1.2% Triton (lysis)	darkred	Reduction in the number of detected genes
+RT-PCR Mix	T4g32 protein - 1 ug - 5 ul rxn - 1.2% Triton (lysis)	darkred	Reduction in the number of detected genes
+RT-PCR Mix	T4g32 protein - 0.25 ug - 5 ul rxn - 4 uM FS TSO3	darkred	Increases the amount of multi-mapped and intergenic reads
+RT-PCR Mix	T4g32 protein - 0.25 ug - 5 ul rxn - 6 uM FS TSO3	darkred	Increases the amount of multi-mapped and intergenic reads
+RT-PCR Mix	T4g32 protein - 0.25 ug - 5 ul rxn - 8 uM FS TSO3	darkred	Increases the amount of multi-mapped and intergenic reads
+RT-PCR Mix	T4g32 protein (home-made) - 5 ug - 25 ul rxn	darkred	Increases the amount of multi-mapped and intergenic reads
+RT-PCR reaction	RT 50°C - 60 min	green	Optimal condition for Superscript IV or Maxima H-
+RT-PCR reaction	RT 37°C - 60 min	darkred	Increases the amount of multi-mapped reads 
+RT-PCR reaction	Extension step pre-ampl PCR - 4 min	darkred	Lower number of detected genes
+RT-PCR reaction	Extension step pre-ampl PCR - 6 min	green	Optimal condition

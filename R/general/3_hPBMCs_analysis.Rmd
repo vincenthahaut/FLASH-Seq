@@ -1,0 +1,1133 @@
+---
+title: "1_process_sc_hPBMCs"
+author: "V. Hahaut, D. Pavlinic & S. Picelli"
+date: "1/4/2022"
+output: html_document
+---
+
+```{r Prerequisits, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
+
+options(scipen=999)
+
+# 1. LIBRARIES / FUNCTIONS
+library(SummarizedExperiment)
+library(tidyverse)
+library(cowplot)
+source("/home/vincent.hahaut/Desktop/FLASH-Seq/R/general/4_aggregate_files_functions.R")
+
+# 2. ANNOTATIONS
+gtf.path <- "/home/vincent.hahaut/data_storage/REFERENCES/hsap_fastsmart/REFERENCE/GTF/gencode.v34.primary_assembly.annotation.gtf"
+gtf <- rtracklayer::import(gtf.path)
+
+# 3. COLORS
+mycolors <- as.vector(c(RColorBrewer::brewer.pal(name = "Dark2", 8),
+                        yarrr::piratepal("basel"), 
+                        yarrr::piratepal("nemo"), 
+                        yarrr::piratepal("appletv"), 
+                        yarrr::piratepal("pony"), 
+                        yarrr::piratepal("info"),
+                        yarrr::piratepal("decision")[-4],
+                        yarrr::piratepal("ipod")))
+
+methodPalette <- function(){scale_fill_manual(values = c("FS" = "#E41A1C",
+                                                         "SS2" = "#377EB8",
+                                                         "SS3" = "#4DAF4A",
+                                                         "SSsc" = "#984EA3")
+)}
+
+
+```
+
+```{r local functions, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
+
+#' processExpressGenes
+#' 
+#' Merge info from number of genes per cell and STAR mapping statistics
+#' First filtering of cells with shallow coverage
+#' @param mydata, data.frame generated with sceToExpressedGenes
+#' @param SAMPLESHEET, Global samplesheet containing all the details related to the sample preparation
+#' @param STAR.log, data.frame generated with getSTARLog
+processExpressGenes <- function(mydata = NULL, SAMPLESHEET = SAMPLESHEET, STAR.log = STAR.log){
+  depths <- c(5000,10000,20000,40000,50000,75000,100000,125000,250000,375000,500000,625000,750000,1000000,1250000,1500000)
+    
+  mydata %>%
+    mutate(oldID = ID,
+           ID = str_replace(ID, "^X", ""),
+           DEPTH = str_extract(ID, paste0(paste0("_", depths, "_"), collapse = "|")),
+           DEPTH = str_replace_all(DEPTH, "_", ""),
+           TIMES = str_extract(ID, ".$"),
+           ID = str_replace(ID, paste0("_", depths, "_1", collapse = "|"), ""),
+           ID = str_replace_all(ID, "\\.", "-")) %>%
+    left_join(SAMPLESHEET, by = c("ID" = "FASTQ_ID")) %>%
+    left_join(STAR.log, by = "ID") %>%
+    filter(as.numeric(N_raw_reads) > 100000, as.numeric(N_uniquely_mapped_reads) > 50000) %>%
+    return()
+}
+
+
+#' summaryPlots
+#' 
+#' Quick graphic summary of a sequencing condition
+#' Returns information regarding 
+#' condition are defined in the "NAME" column
+#' @param mydata, data.frame generated with sceToExpressedGenes
+#' @param title, Suffix of the graph name (save)
+#' @param mycols, ggplot scale_color_manual() compatible condition to color (e.g., c("CONDITION_A" = "blue"))
+
+summaryPlots <- function(mydata = mydata, title = NULL, mycols = NULL){
+  
+  # 1. Gene counts
+  
+  # 1.1. Statistical test
+  # Shapiro.test always reject the normal distribution
+  # Kruskall (>2 conditions) or mann-whitney (= 2 conditions)
+  if(length(unique(mydata$NAME)) > 2){
+    
+    if(broom::tidy(kruskal.test(mydata$count_0, mydata$NAME))$p.value < 0.05){
+      mytest <- FSA::dunnTest(mydata$count_0, mydata$NAME, method = "bonferroni")
+      mytest <- data_frame(group1 = str_split(mytest$res[,1], " - ", simplify = TRUE)[,1], 
+                           group2 =  str_split(mytest$res[,1], " - ", simplify = TRUE)[,2],
+                           p.value = mytest$res$P.adj)
+    } else {
+      mytest <- data_frame(group1 = "A",
+                           group2 =  "B",
+                           p.value = 1)
+    }
+  } else {
+
+    mytest <- broom::tidy(wilcox.test(data = mydata, mydata$count_0 ~ mydata$NAME, alternative = "two.sided"))
+    mytest <- data_frame(group1 = levels(factor(mydata$NAME))[1], 
+                         group2 =  levels(factor(mydata$NAME))[2], 
+                         p.value = mytest$p.value)
+  }
+  
+  # 1.2. Display the gene counts
+  p.gene <- ggplot() +
+    geom_hline(yintercept = seq(0,max(mydata$count_0)*1.1,1000), linetype = "dotted", color = "darkgrey") +
+    geom_violin(data = mydata, aes(y = count_0, x = NAME, fill = reorder(NAME, count_0, median))) +
+    geom_boxplot(data = mydata, aes(y = count_0, x = NAME, fill = reorder(NAME, count_0, median)), width=0.1) +
+    scale_fill_manual(values = mycols) +
+    scale_y_continuous(breaks = seq(0,max(mydata$count_0)*1.1,1000)) +
+    scale_color_brewer(palette = "Dark2") +
+    ylab("Detected Genes") + 
+    xlab("") +
+    theme_cowplot(font_size = 28) +
+    theme(legend.position = "none", 
+          legend.title = element_blank(),
+          panel.background = element_rect(color = "white"),
+          plot.background = element_rect(color = "white"),
+          axis.text.y = element_text(size = 22), 
+          axis.text.x = element_text(size = 20),
+          axis.title = element_text(size = 24),
+          legend.text = element_text(size = 18)) +
+    geom_text(data = mydata, aes(y = 0, x = NAME, label=paste0("n = ", ..count..)), y=0, stat='count', size=6)
+  
+  # 1.3. Add significance info if any < 0.05
+  mytest <- filter(mytest, p.value < 0.05)
+  if(nrow(mytest) > 0){
+    index <- 1:nrow(mytest)
+    
+    pos.stats <- mytest %>% mutate(
+      y.seg = max(mydata$count_0) + max(mydata$count_0)*(1.2*index/50),
+      y.lab = y.seg * 1.0005,
+      lab = case_when(p.value < 0.05 & p.value > 0.005 ~ "*",
+                      p.value < 0.005 & p.value > 0.0005 ~ "**",
+                      p.value < 0.0005 ~ "***",
+                      TRUE ~ "NA")) %>%
+      rowwise() %>%
+      mutate(lab.pos = mean(c(which(levels(factor(mydata$NAME)) == group1), which(levels(factor(mydata$NAME)) == group2)))) %>%
+      ungroup()
+    
+    p.gene <- p.gene +
+      geom_segment(data = pos.stats, aes(y = y.seg, yend = y.seg, x = group1, xend = group2), size = 0.25) +
+      geom_text(data = pos.stats, aes(y = y.lab, label = lab, x = lab.pos), size = 6)
+    
+  }
+  
+  # 2. ReSQC read tag distribution
+  p.resqc <- filter(resqc, ID %in% mydata$ID) %>%
+    select(ID, UTR3_Exons, UTR5_Exons, CDS_Exons, Introns, TES_down_10kb, TSS_up_10kb, totalReadTags) %>%
+    mutate(Intergenic = totalReadTags - UTR3_Exons - UTR5_Exons - CDS_Exons - Introns) %>%
+    gather(key, val, -ID, -totalReadTags) %>%
+    mutate(perc = 100*val/totalReadTags) %>%
+    left_join(mydata %>% select(NAME, ID), by = "ID") %>%
+    mutate(key = case_when(key == "UTR5_Exons" ~ "5'UTR Exons",
+                           key == "UTR3_Exons" ~ "3'UTR Exons",
+                           key == "CDS_Exons" ~ "CDS Exons",
+                           key == "Introns" ~ "Introns",
+                           key == "Intergenic" ~ "Intergenic",
+                           key == "TES_down_10kb" ~ "TES_down_10kb",
+                           key == "TSS_up_10kb" ~ "TSS_up_10kb"),
+           key = factor(as.factor(key), levels = c("TES_down_10kb", "TSS_up_10kb", "3'UTR Exons", "5'UTR Exons", "Intergenic", "Introns", "CDS Exons"))) %>%
+    # TES / TSS info as they usually bring little info
+    filter(!key %in% c("TES_down_10kb", "TSS_up_10kb")) %>%
+    ggplot(aes(y = NAME, x = perc, fill = NAME)) +
+    geom_violin() +
+    geom_boxplot(width = 0.1) +
+    theme_cowplot(font_size = 28) +
+    facet_wrap("key", scales = "free_x", nrow = 1) +
+    scale_fill_manual(values = mycols) +
+    theme(axis.text.x = element_text(size = 20),
+          legend.position = "none",
+          strip.text = element_text(size = 24, face = "bold"),
+          panel.background = element_rect(color = "white"),
+          plot.background = element_rect(color = "white"),
+          rect = element_rect(size = 0.75, color = "black"), 
+          panel.border = element_rect(size = 0.75, color = "black"), 
+          panel.grid.major.x = element_line(linetype = "dotted", color = "darkgrey", size = 0.5),
+          axis.line.y.right = element_line(color = "black", linetype = "solid", size = 1)) +
+    ylab("") +
+    xlab("Read Tags (%)") 
+  
+  # 3. STAR mapping statistics
+  p.star <- select(mydata, NAME, P_uniquely_mapped_reads, P_multiple_Loci, P_too_short_read) %>%
+    gather(key, val, -NAME) %>%
+    mutate(key = case_when(key == "P_uniquely_mapped_reads" ~ "Uniquely Mapped", 
+                           key == "P_multiple_Loci" ~ "Multi-Mapped", 
+                           key == "P_too_short_read" ~ "Unmapped"),
+           key = factor(as.factor(key), levels = c("Uniquely Mapped", "Multi-Mapped", "Unmapped")),
+           FILL = paste(key, NAME)) %>%
+    mutate(val = as.numeric(as.character(val))) %>%
+    ggplot(aes(x = NAME, y = val, fill = NAME)) +
+    geom_violin() +
+    geom_boxplot(width = 0.1) +
+    ylab("Reads (%)") +
+    xlab("") +
+    facet_wrap("key", nrow = 1, scales = "free_y") +
+    theme_cowplot(font_size = 28) +
+    theme(legend.position = "none",
+          panel.background = element_rect(color = "white"),
+          plot.background = element_rect(color = "white"),
+          rect = element_rect(size = 0.75, color = "black"), 
+          strip.text = element_text(size = 18, face = "bold"),
+          panel.border = element_rect(size = 0.75, color = "black"), 
+          axis.text.x = element_text(size = 20, angle = 45, hjust = 1),
+          panel.grid.major.y = element_line(linetype = "dotted", color = "darkgrey", size = 0.5),
+          axis.line.y.right = element_line(color = "black", linetype = "solid", size = 1)) +
+    scale_fill_manual(values = mycols) 
+  
+  # 4. Combine and save the graphics
+  ggsave(bg = "white",
+         plot_grid(
+           plot_grid(p.gene, p.star, 
+                     nrow = 1, labels = c("a", "b"), label_size = 28, rel_widths = c(0.32, 0.67)), 
+           p.resqc, nrow = 2, label_size = 28, labels = c("", "c")) + theme(panel.background = element_rect(color = "white"),
+                                                                            plot.background = element_rect(color = "white")), 
+         filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/", title, ".tiff"),
+         dpi = 300, width = 32, height = 20)
+  
+  return(list(p.gene, p.star,p.resqc))
+}
+
+
+```
+
+```{r Load Data, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
+
+# 0. Load the global sample sheet
+SAMPLESHEET <- read.delim("/home/vincent.hahaut/Desktop/GITHUB/IOB/SampleSheet/FS_GLOBAL_SAMPLESHEET_17112021.txt", sep = "\t")
+
+# 1. STAR - Statistics (getSTARlog)
+STAR.log <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/STAR.logs.2021-12-05.rds.bz")
+
+# 2. MEDIAN GENE COUNTS - FEATURECOUNTS - DOWNSAMPLINGS (sceToExpressedGenes)
+med.exon <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/downsampling_medianGenes_featureCounts.exon.all.2021-12-05.rds.bz") %>%
+  processExpressGenes(mydata = ., SAMPLESHEET = SAMPLESHEET, STAR.log = STAR.log)
+
+# 3. RAW SCE OBJECTS
+# SingleCellObject containing the read counts associated to each cell
+sce <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/downsampling_featureCounts.exon.all.2021-12-05.rds.bz")
+
+# 4. Salmon (sceToExpressedGenes)
+# Downsampled to 250 or 500K raw reads
+sce.sal.500K.med <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/downsampling_medianGenes_salmon.all.500000.2021-12-05.rds.bz")
+sce.sal.250K.med <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/downsampling_medianGenes_salmon.all.250000.2021-12-05.rds.bz")
+
+# 5. RESQC - READ DISTRIBUTION (getRESeQC_readDistribution)
+resqc <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/ReSQC.distribution.2021-12-05.rds.bz")
+
+# 6. RESQC - GENE BODY COVERAGES (getRESeQC_coverage)
+cover <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/ReSQC.coverage.2021-12-05.rds.bz")
+
+# 7. Estimated FS Timing (see supplementary excel file)
+timing <- read_tsv("/home/vincent.hahaut/data_storage/FS_intermediate_file/FS_timing.txt")
+
+
+```
+
+## FS PBMC - 96w / 384w
+
+```{r general statistics, eval = FALSE, echo = F, include = FALSE, warning = FALSE, comment = F, message = F, cache = FALSE, fig.align="center}
+
+# 1. Select the cells of interest
+mydata <- med.exon %>%
+  mutate(NAME = case_when(
+    PLATE %in% c("39") ~ "SSsc",
+    PLATE %in% c("32", "354", "385") ~ "SS3",
+    PLATE %in% c("116", "117", "250") & OLIGOT_DILUTION_FACTOR == 5 ~ "FS - 25 µL",
+    PLATE %in% c("29") ~ "SS2",
+    CELL == "PBMC" & DENATURATION == "72" & RT_LENGTH == "60" & TTH == "0" & T4 == "0" & 
+      LYSIS_VOLUME == "1" & OLIGOT_DILUTION_FACTOR == "5" & METHOD == "FASTSMART" & 
+      NACL == "0" & ENZYME %in% c("SIV", "MAXIMA") & PCR == "6" & LYSIS == "TRITON_LOW" & 
+      RT_TEMP == "50" & CYCLES > 20 & TSO == "1" ~ "FS - 5 µL\nMiniaturized"))  %>%
+  # Failed experiments
+  filter(!is.na(NAME), !PLATE %in% c("209", "203-1", "203-2")) %>%
+  mutate(NAME = factor(NAME, levels = c("SS2", "SS3", "FS - 25 µL", "SSsc", "FS - 5 µL\nMiniaturized")),
+         sce.ids = str_replace_all(paste0("X", ID, "_125000_1"), "-", ".")) %>%
+  # Filter out low quality cells
+  filter(as.numeric(P_uniquely_mapped_reads) > 50, 
+         as.numeric(P_too_short_read) < 25, WELL != "H12",
+         count_0 > 500)
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+# 2. Compare gene counts
+
+# 2.1. Statistical comparisons
+kruskal.test(data = mydata %>% filter(DEPTH == 125000), count_0 ~ NAME)
+dunn.test::dunn.test(x = mydata[mydata$DEPTH == 125000,]$count_0, g = mydata[mydata$DEPTH == 125000,]$NAME, method = "Bonferroni")
+
+# old manual graph annotation
+geomseg <- data_frame(x = c(5,5,
+                            4,4,
+                            2,
+                            1,1),
+                      xend = c(2,1,
+                               2,1,
+                               4, 
+                               2,4),
+                      y = seq(7300,8500,200),
+                      yend = seq(7300,8500,200),
+                      lab = c("***", "***", 
+                              "***", "***",
+                              "***", "***",
+                              "***"))
+
+# 2.2. Visualize
+p1.pbmc <- mydata %>%
+  filter(DEPTH == "125000") %>%
+  ggplot() +
+  geom_hline(yintercept = seq(0,8500,1000), linetype = "dotted", color = "darkgrey") +
+  geom_violin(aes(y = count_0, x = NAME, fill = NAME)) +
+  geom_boxplot(aes(y = count_0, x = NAME, fill = NAME), width = 0.1) +
+  scale_fill_manual(values = c("FS - 25 µL" = "#E41A1C",
+                               "SS2" = "#377EB8",
+                               "SS3" = "#4DAF4A",
+                               "SSsc" = "#984EA3",
+                               "FS - 5 µL\nMiniaturized" = "#FF850D")) + 
+  scale_y_continuous(breaks = seq(0,8500,1000)) +
+  geom_segment(data = geomseg, aes(x=x,xend=xend,y=y,yend=yend)) +
+  geom_text(data = geomseg, aes(x=(x+xend)/2, y=y-15, label = lab), size = 7.5) +
+  geom_text(aes(x = NAME, label=paste0("n = ", ..count..)), y = -100, stat='count', size=5) +
+  ylab("Detected Genes") + 
+  xlab("") +
+  theme_cowplot(font_size = 28) +
+  theme(legend.position = "none",
+        axis.text = element_text(size = 22), 
+        axis.title = element_text(size = 24),
+        legend.text = element_text(size = 14)) 
+
+ggsave(p1.pbmc, bg = "white",
+       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/PBMC_96w_exonCounts.tiff", dpi = 300, width = 10, height = 8)
+
+# 3. Intronics / exonic read tags in hPBMCs
+p.intron.pbmc <- right_join(resqc, select(mydata, ID, NAME)) %>%
+  select(ID, UTR3_Exons, UTR5_Exons, CDS_Exons, Introns, TES_down_10kb, TSS_up_10kb, totalReadTags, NAME) %>%
+  mutate(Intergenic = totalReadTags - UTR3_Exons - UTR5_Exons - CDS_Exons - Introns - TES_down_10kb - TSS_up_10kb) %>%
+  gather(key, val, -ID, -totalReadTags, -NAME) %>%
+  mutate(perc = 100*val/totalReadTags,
+         NAME = case_when(NAME == "FS - 5 µL\nMiniaturized" ~ "F", 
+                          NAME == "SS2" ~ "SS2", 
+                          NAME == "SS3" ~ "SS3", 
+                          NAME == "SSsc" ~ "SSsc",
+                          NAME == "FS - 25 µL" ~ "FS - 25 µL"),
+         NAME = factor(as.factor(NAME), levels = c("FS - 25 µL", "F", "SS2", "SS3",  "SSsc" )),
+         key = factor(as.factor(key), levels = c("TES_down_10kb", "TSS_up_10kb", "UTR3_Exons", "UTR5_Exons", "Intergenic", "Introns", "CDS_Exons"))) %>%
+  filter(key %in% c("CDS_Exons", "Introns")) %>%
+  ggplot(aes(x = NAME, y = perc, fill = NAME)) +
+  geom_violin() +
+  geom_boxplot(width = 0.1) +
+  scale_fill_manual(values = c("FS - 25 µL" = "#E41A1C",
+                               "F" = "#FF850D",
+                               "SS2" = "#377EB8",
+                               "SS3" = "#4DAF4A",
+                               "SSsc" = "#984EA3")) +
+  theme_cowplot(font_size = 24) +
+  scale_y_continuous(breaks = seq(0,65,10)) +
+  facet_wrap("key", scales = "free_x", nrow = 1) +
+  theme(legend.position = "none", 
+        rect = element_rect(size = 0.75, color = "black"), 
+        panel.border = element_rect(size = 0.75, color = "black"), 
+        panel.grid.major.y = element_line(linetype = "dotted", color = "darkgrey", size = 0.5),
+        axis.line.y.right = element_line(color = "black", linetype = "solid", size = 1)) +
+  xlab("") +
+  ylab("Read Tags (%)") 
+
+ggsave(p.intron.pbmc, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/intronics_reads_methods.tiff", bg = "white", dpi = 300, width = 10, height = 6)
+
+# ggsave(plot_grid(
+#  p.intron.hek, p.intron.pbmc, nrow = 2), 
+#  filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/intronics_reads_ALL.tiff", 
+# bg = "white", dpi = 300, width = 14, height = 9)
+```
+
+```{r hPBMCs sc, eval = FALSE, echo = F, include = FALSE, warning = FALSE, comment = F, message = F, cache = FALSE, fig.align="center}
+
+# 1. Select cells of interest
+mydata <- med.exon %>%
+  filter(as.numeric(as.character(P_too_short_read)) < 25) %>%
+  mutate(NAME = case_when(
+    PLATE %in% c("39") ~ "SSsc",
+    PLATE %in% c("32", "354", "385") ~ "SS3",
+    PLATE %in% c("116", "117", "250") & OLIGOT_DILUTION_FACTOR == 5 ~ "FS - 25 µL",
+    PLATE %in% c("29") ~ "SS2",
+    CELL == "PBMC" & DENATURATION == "72" & RT_LENGTH == "60" & TTH == "0" & T4 == "0" & LYSIS_VOLUME == "1" & OLIGOT_DILUTION_FACTOR == "5" & METHOD == "FASTSMART" & NACL == "0" & ENZYME %in% c("SIV", "MAXIMA") & PCR == "6" & LYSIS == "TRITON_LOW" & RT_TEMP == "50" & CYCLES > 20 & TSO == "1" ~ "FS - 5 µL\nMiniaturized"))  %>%
+  filter(!is.na(NAME), !PLATE %in% c("209", "203-1", "203-2")) %>%
+  mutate(NAME = factor(NAME, levels = c("SS2", "SS3", "FS - 25 µL", "SSsc", "FS - 5 µL\nMiniaturized")),
+         sce.ids = str_replace_all(paste0("X", ID, "_125000_1"), "-", ".")) %>%
+  filter(as.numeric(P_uniquely_mapped_reads) > 50, 
+         as.numeric(P_too_short_read) < 25, WELL != "H12",
+         count_0 > 500)
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+# 2. Quick seurat wrapper function
+basicSeurat <- function(mysce = NULL, select.ids = mydata$sce.ids, GROUP = NULL, ndims = 15, nfeatures = 3000, out.path = "/home/vincent.hahaut/PBMC_ssce.rds"){
+    library(Seurat)
+    ssce <- Seurat::CreateSeuratObject(counts = as.matrix(assay(mysce[,colnames(mysce) %in% select.ids])))
+    ssce$PLATE <- str_replace_all(str_split(colnames(ssce), "_", simplify = T)[,1], pattern = "X|_", "")
+    ssce$GROUP <- GROUP
+    ssce$DONOR <- case_when(ssce$PLATE %in% c("346", "354") ~  "DONOR 2",
+                            ssce$PLATE %in% c("385") ~  "DONOR 1",
+                            TRUE ~  "DONOR 3")
+    ssce[["percent.mt"]] <- PercentageFeatureSet(ssce, pattern = "^MT-")
+    ssce <- ssce[!grepl(row.names(ssce), pattern = "MT-|MALAT1|RPS|RPL"),] 
+    ssce <- Seurat::SCTransform(ssce, vars.to.regress = c("nCount_RNA", "percent.mt"), variable.features.n = nfeatures, seed.use = 42)
+    ssce <- Seurat::RunPCA(ssce, npcs = 40)
+    ssce <- Seurat::RunUMAP(ssce, dims = 1:ndims, umap.method = "uwot")
+    ssce <- Seurat::FindNeighbors(ssce, dims = 1:ndims)
+    ssce <- Seurat::FindClusters(ssce, resolution = 1.5)
+    write_rds(ssce, out.path)
+    return(ssce)
+}
+
+# 3. Process count matrices
+# Various tests / groups to explore the data under different angles
+# parameters are adapted after several rounds of tests
+# spliting by donors does not change much but helped increased the cell type azimuth Cluster Preservation score
+ssce.ss3 <- basicSeurat(mysce = sce, GROUP = "SS3", select.ids = mydata$sce.ids[mydata$NAME == "SS3"], 
+                        ndims = 8, nfeatures = 3000, out.path = "/home/vincent.hahaut/PBMC_SS3_ssce.rds")
+ssce.fsmin.donor1 <- basicSeurat(mysce = sce, GROUP = "FS - 5 µL\nMiniaturized", 
+                                 select.ids = mydata$sce.ids[mydata$NAME == "FS - 5 µL\nMiniaturized" & mydata$PLATE == "346"], 
+                                 ndims = 10, nfeatures = 3000, out.path = "/home/vincent.hahaut/PBMC_FSmin_ssce.donor1.rds")
+ssce.fsmin.donor2 <- basicSeurat(mysce = sce, GROUP = "FS - 5 µL\nMiniaturized", 
+                                 select.ids = mydata$sce.ids[mydata$NAME == "FS - 5 µL\nMiniaturized" & mydata$PLATE != "346"], 
+                                 ndims = 10, nfeatures = 3000, out.path = "/home/vincent.hahaut/PBMC_FSmin_ssce.donor2.rds")
+ssce.fs <- basicSeurat(mysce = sce, GROUP = "FS - 25 µL", select.ids = mydata$sce.ids[mydata$NAME == "FS - 25 µL"], 
+                       ndims = 12, nfeatures = 3000, out.path = "/home/vincent.hahaut/PBMC_FS_ssce.rds")
+ssce.only <- basicSeurat(mysce = sce, GROUP = "FS", 
+                         select.ids = mydata$sce.ids[mydata$NAME %in% c("FS - 5 µL\nMiniaturized", "FS - 25 µL")], 
+                         ndims = 12, nfeatures = 3000, out.path = "/home/vincent.hahaut/PBMC_FSonly_ssce.rds")
+ssce.SS2 <- basicSeurat(mysce = sce, GROUP = "SS2", select.ids = mydata$sce.ids[mydata$NAME == "SSsc"], 
+                        ndims = 5, nfeatures = 1500, out.path = "/home/vincent.hahaut/PBMC_SS2_ssce.rds")
+ssce.noSS3 <- basicSeurat(mysce = sce, GROUP = "FS_SSSC_SS2", select.ids = mydata$sce.ids[mydata$NAME != "SS3"], 
+                          ndims = 12, nfeatures = 3000, out.path = "/home/vincent.hahaut/PBMC_FSnotSS3_ssce.rds")
+
+# 4. Azimuth predictions: used azimuth website
+
+# 5. Aggregate cell type predictions
+ss3.ex.pred <- read_tsv("/home/vincent.hahaut/Downloads/archive/SS3_ex_azimuth.tsv")
+FS.ex.pred <- read_tsv("/home/vincent.hahaut/Downloads/archive/FS_ex_azimuth.tsv")
+FSmin.1.pred <- read_tsv("/home/vincent.hahaut/Downloads/archive/FSmin_donor1.tsv")
+FSmin.2.pred <- read_tsv("/home/vincent.hahaut/Downloads/archive/FSmin_donor2.tsv")
+ss2.ssc <- read_tsv("/home/vincent.hahaut/Downloads/archive/FSnotSS3.tsv") %>%
+  filter(grepl("^X29_|^X39_", cell))
+
+predictions <- bind_rows(ss3.ex.pred,
+          FS.ex.pred,
+          FSmin.1.pred,
+          ss2.ssc,
+          FSmin.2.pred) %>%
+  as.data.frame()
+
+# 6. Add metadata (groups / cell types) to sce object 
+row.names(predictions) <- predictions$cell
+predictions$cell <- NULL
+ssce.ss3 <- Seurat::AddMetaData(ssce.ss3, predictions)
+ssce.only <- Seurat::AddMetaData(ssce.only, predictions)
+
+groups <- data.frame(row.names = colnames(sce)) %>%
+  mutate(GROUP = case_when(
+    grepl("X39_", row.names(.)) ~ "SSsc",
+    grepl("X32_|X354_|X385_", row.names(.))~ "SS3",
+    grepl("X116_|X117_|X250_", row.names(.)) ~ "FS - 25 µL",
+    grepl("X29_", row.names(.)) ~ "SS2",
+    TRUE ~ "FS - 5 µL\nMiniaturized"))
+ssce.ss3 <- Seurat::AddMetaData(ssce.ss3, groups)
+ssce.only <- Seurat::AddMetaData(ssce.only, groups)
+
+ssce.ss3$predicted.celltype.l2 <- str_replace_all(ssce.ss3$predicted.celltype.l2, " ", "_")
+ssce.only$predicted.celltype.l2 <- str_replace_all(ssce.only$predicted.celltype.l2, " ", "_")
+
+# 7. Visualize results
+predicted.l2.colors <- c("B_intermediate" = "#6B8993FF",
+"B_memory" = "#D95F02",
+"B_naive" = "#7570B3",
+"Plasmablast" = "#E7298A",
+"CD4_CTL" = "#9C7E70FF",
+"CD4_Naive" = "#E6AB02",
+"CD4_Proliferating" = "#A6761D",
+"CD4_TCM" = "#AEADB0FF",
+"CD4_TEM" = "#0C5BB0FF",
+"Treg" = "#94D4D4FF",
+"CD8_Naive" = "#15983DFF",
+"CD8_Proliferating" = "#EC579AFF",
+"CD8_TCM" = "#A1C720FF",
+"CD8_TEM" = "black",
+"cDC2" = "#FA6B09FF", 
+"pDC" = "#9DDAF5FF",
+"CD14_Mono" = "#66A61E", 
+"CD16_Mono" = "#9A703EFF",
+"NK" = "#EE0011FF", 
+"Eryth" = "#666666",
+"Platelet" = "#16A08CFF",
+"gdT" = "#9966CC",
+"MAIT" = "#11776CFF")
+
+DimPlot.FS <- plot_grid(ncol = 2,
+                        plot_grid(ncol = 1,
+                              DimPlot(ssce.ss3, group.by = "DONOR", cols = mycolors) + theme(plot.title = element_blank()),
+                      DimPlot(ssce.ss3, group.by = "GROUP", cols = c("#E41A1C", "#FF850D")) + theme(plot.title = element_blank())),
+                        plot_grid(ncol = 1,
+                          DimPlot(ssce.only, group.by = "DONOR", cols = mycolors) + theme(plot.title = element_blank()),
+                          DimPlot(ssce.only, group.by = "GROUP", cols = c("#E41A1C", "#FF850D")) + theme(plot.title = element_blank())))
+
+ggsave(plot_grid(
+  DimPlot(ssce.ss3, group.by = "predicted.celltype.l2", cols = mycolors) + 
+    theme(plot.title = element_blank(), legend.position = "none") + 
+    scale_color_manual(values = predicted.l2.colors),
+  DimPlot(ssce.only, group.by = "predicted.celltype.l2", cols = mycolors) + 
+    theme(plot.title = element_blank(), legend.position = "none") + 
+    scale_color_manual(values = predicted.l2.colors)),
+bg = "white", filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/DimPlot_PBMC_FS.predicted.tiff", dpi = 300, width = 12, height = 6)
+
+ggsave(DimPlot.FS, bg = "white", filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/DimPlot_PBMC_FS.tiff", dpi = 300, width = 10, height = 6)
+
+ggsave(DimPlot(ssce.only, group.by = "predicted.celltype.l2", cols = mycolors) +  scale_color_manual(values = predicted.l2.colors) , bg = "white", filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/DimPlot_PBMC_FS.legend.tiff", dpi = 300, width = 10, height = 10)
+
+# 5. Check up:
+B_intermediate = c("MS4A1","TNFRSF13B","IGHM","IGHD","AIM2","CD79A","LINC01857","RALGPS2","BANK1","CD79B", "CD3D")
+B_memory =c("MS4A1","COCH","AIM2","BANK1","SSPN","CD79A","TEX9","RALGPS2","TNFRSF13C","LINC01781", "")
+B_naive =c("IGHM","IGHD","CD79A","IL4R","MS4A1","CXCR4","BTG1","TCL1A","CD79B","YBX3", "")
+Plasmablast =c("IGHA2","MZB1","TNFRSF17","DERL3","TXNDC5","TNFRSF13B","POU2AF1","CPNE5","HRASLS2","NT5DC2", "")
+CD4_CTL =c("GZMH","CD4","FGFBP2","ITGB1","GZMA","CST7","GNLY","B2M","IL32","NKG7", "")
+CD4_Naive =c("TCF7","CD4","CCR7","IL7R","FHIT","LEF1","MAL","NOSIP","LDHB","PIK3IP1", "CD3D")
+CD4_Proliferating =c("MKI67","TOP2A","PCLAF","CENPF","TYMS","NUSAP1","ASPM","PTTG1","TPX2","RRM2", "")
+CD4_TCM =c("IL7R","TMSB10","CD4","ITGB1","LTB","TRAC","AQP3","LDHB","IL32","MAL", "")
+CD4_TEM =c("IL7R","CCL5","FYB1","GZMK","IL32","GZMA","KLRB1","TRAC","LTB","AQP3", "")
+Treg =c("RTKN2","FOXP3","AC133644.2","CD4","IL2RA","TIGIT","CTLA4","FCRL3","LAIR2","IKZF2", ""),
+CD8_Naive =c("CD8B","S100B","CCR7","RGS10","NOSIP","LINC02446","LEF1","CRTAM","CD8A","OXNAD1", "CD3D")
+CD8_Proliferating =c("MKI67","CD8B","TYMS","TRAC","PCLAF","CD3D","CLSPN","CD3G","TK1","RRM2", "")
+CD8_TCM =c("CD8B","ANXA1","CD8A","KRT1","LINC02446","YBX3","IL7R","TRAC","NELL2","LDHB", "")
+CD8_TEM =c("CCL5","GZMH","CD8A","TRAC","KLRD1","NKG7","GZMK","CST7","CD8B","TRGC2", "")
+# ASDC =c("PPP1R14A","LILRA4","AXL","IL3RA","SCT","SCN9A","LGMN","DNASE1L3","CLEC4C","GAS6")
+# cDC1 =c("CLEC9A","DNASE1L3","C1orf54","IDO1","CLNK","CADM1","FLT3","ENPP1","XCR1","NDRG2")
+cDC2 =c("FCER1A","HLA-DQA1","CLEC10A","CD1C","ENHO","PLD4","GSN","SLC38A1","NDRG2","AFF3", "")
+pDC =c("ITM2C","PLD4","SERPINF1","LILRA4","IL3RA","TPM2","MZB1","SPIB","IRF4","SMPD3", "")
+CD14_Mono =c("S100A9","CTSS","S100A8","LYZ","VCAN","S100A12","IL1B","CD14","G0S2","FCN1", "")
+CD16_Mono =c("CDKN1C","FCGR3A","PTPRC","LST1","IER5","MS4A7","RHOC","IFITM3","AIF1","HES4", "")
+NK =c("GNLY","TYROBP","NKG7","FCER1G","GZMB","TRDC","PRF1","FGFBP2","SPON2","KLRF1", "CD3D")
+# NK_Proliferating =c("MKI67","KLRF1","TYMS","TRDC","TOP2A","FCER1G","PCLAF","CD247","CLSPN","ASPM")
+# NK_CD56bright =c("XCL2","FCER1G","SPINK2","TRDC","KLRC1","XCL1","SPTSSB","PPP1R9A","NCAM1","TNFRSF11A")
+Eryth =c("HBD","HBM","AHSP","ALAS2","CA1","SLC4A1","IFIT1B","TRIM58","SELENBP1","TMCC2", "")
+# HSPC =c("SPINK2","PRSS57","CYTL1","EGFL7","GATA2","CD34","SMIM24","AVP","MYB","LAPTM4B"),
+Platelet =c("PPBP","PF4","NRGN","GNG11","CAVIN2","TUBB1","CLU","HIST1H2AC","RGS18","GP9", "")
+# ILC =c("KIT","TRDC","TTLL10","LINC01229","SOX4","KLRB1","TNFRSF18","TNFRSF4","IL1R1","HPGDS"),
+#dnT =c("PTPN3","MIR4422HG","NUCB2","CAV1","DTHD1","GZMA","MYB","FXYD2","GZMK","AC004585.1"),
+gdT =c("TRDC","TRGC1","TRGC2","KLRC1","NKG7","TRDV2","CD7","TRGV9","KLRD1","KLRG1", "CD3D")
+MAIT =c("KLRB1","NKG7","GZMK","IL7R","SLC4A10","GZMA","CXCR6","PRSS35","RBM24","NCR3", "")
+
+mysce <- ssce.only
+FeaturePlot(mysce, B_naive)
+FeaturePlot(mysce, Plasmablast)
+FeaturePlot(mysce, B_intermediate)
+FeaturePlot(mysce, CD4_Naive)
+FeaturePlot(mysce, CD4_Proliferating)
+FeaturePlot(mysce, CD4_TCM)
+FeaturePlot(mysce, CD4_TEM)
+
+FeaturePlot(mysce, CD8_Naive)
+FeaturePlot(mysce, CD8_Proliferating)
+FeaturePlot(mysce, CD8_TCM)
+FeaturePlot(mysce, CD8_TEM)
+FeaturePlot(mysce, gdT)
+FeaturePlot(mysce, MAIT)
+FeaturePlot(mysce, NK)
+
+```
+
+```{r downsampling, eval = FALSE, echo = F, include = FALSE, warning = FALSE, comment = F, message = F, cache = FALSE, fig.align="center}
+
+# 1. Load cell type predictions
+ss3.ex.pred <- read_tsv("/home/vincent.hahaut/Downloads/archive/SS3_ex_azimuth.tsv")
+FS.ex.pred <- read_tsv("/home/vincent.hahaut/Downloads/archive/FS_ex_azimuth.tsv")
+FSmin.1.pred <- read_tsv("/home/vincent.hahaut/Downloads/archive/FSmin_donor1.tsv")
+FSmin.2.pred <- read_tsv("/home/vincent.hahaut/Downloads/archive/FSmin_donor2.tsv")
+ss2.ssc <- read_tsv("/home/vincent.hahaut/Downloads/archive/FSnotSS3.tsv") %>%
+  filter(grepl("^X29_|^X39_", cell))
+
+# 2. Aggregate the info
+predictions <- bind_rows(
+  ss3.ex.pred,
+  FS.ex.pred,
+  FSmin.1.pred,
+  FSmin.2.pred,
+  ss2.ssc) %>%
+  select(cell, predicted.celltype.l2) %>% 
+  mutate(ID = str_replace_all(pattern = "X|_125000_1", replace = "", cell),
+         ID = str_replace_all(pattern = "\\.", replace = "-", ID))
+
+# 3. Associate the cell type to the gene counts
+mydata <- med.exon %>%
+  mutate(NAME = case_when(
+    PLATE %in% c("39") ~ "SSsc",
+    PLATE %in% c("32", "354", "385") ~ "SS3",
+    PLATE %in% c("116", "117", "250") & OLIGOT_DILUTION_FACTOR == 5 ~ "FS - 25 µL",
+    PLATE %in% c("29") ~ "SS2",
+    CELL == "PBMC" & DENATURATION == "72" & RT_LENGTH == "60" & TTH == "0" & T4 == "0" & 
+      LYSIS_VOLUME == "1" & OLIGOT_DILUTION_FACTOR == "5" & METHOD == "FASTSMART" & NACL == "0" & 
+      ENZYME %in% c("SIV", "MAXIMA") & PCR == "6" & LYSIS == "TRITON_LOW" & 
+      RT_TEMP == "50" & CYCLES > 20 & TSO == "1" ~ "FS - 5 µL\nMiniaturized"))  %>%
+  # Low quality libraries / cells
+  filter(!is.na(NAME), !PLATE %in% c("209", "203-1", "203-2"),
+         as.numeric(P_uniquely_mapped_reads) > 50, as.numeric(as.character(P_too_short_read)) < 25, WELL != "H12",
+         DEPTH %in% c("5000", "10000", "20000", "40000", "50000","75000","100000","125000","250000", "375000", "500000")) %>%
+  select(ID, count_0, PLATE, NAME, DEPTH) %>%
+  # Add cells types
+  left_join(predictions, by = "ID") %>% 
+  # Misannotated SS3 Naive
+  mutate(predicted.celltype.l2 = ifelse(
+    ID %in% str_replace_all(pattern = "X|_125000_1", replacement = "", colnames(ssce.ss3)[ssce.ss3$seurat_clusters %in% c(1,8)]) & predicted.celltype.l2 != "CD8 Naive", "CD4 Naive", predicted.celltype.l2)
+  ) %>%
+  # Keep only those with a cell type
+  filter(!is.na(predicted.celltype.l2), 
+         !is.na(DEPTH),
+         predicted.celltype.l2 != "other") %>%
+  group_by(DEPTH, NAME, predicted.celltype.l2) %>%
+  mutate(n = n()) %>%
+  ungroup() %>%
+  # Select only conditions with >2 cells 
+  filter(n > 2) %>%
+  # Levels
+  mutate(NAME = factor(NAME, levels = c("SS2", "SS3", "FS - 25 µL", "SSsc", "FS - 5 µL\nMiniaturized")),
+         DEPTH = factor(DEPTH, levels = c("5000", "10000", "20000", "40000", "50000","75000","100000",
+                                          "125000","250000","375000", "500000", "625000", "750000", "1000000", "1250000", "1500000"))) 
+
+# 4. Statistical comparison
+mydata.stats <- filter(mydata, NAME %in% c("FS - 5 µL\nMiniaturized", "SS3"), DEPTH %in% c(125000)) %>%
+  filter(predicted.celltype.l2 %in% c("B naive","CD14 Mono","CD16 Mono","CD4 Naive","CD4 TCM","CD8 Naive","CD8 TEM","NK","gdT","MAIT")) %>%
+  group_by(predicted.celltype.l2) %>%
+  do(w = wilcox.test(count_0 ~ NAME, data=.)) %>% 
+  summarise(predicted.celltype.l2 = unique(predicted.celltype.l2),
+            pval = w$p.value) %>%
+  ungroup() %>%
+  mutate(p.adj = p.adjust(pval, method = "bonferroni"),
+         p.signif = case_when(p.adj < 0.05 & p.adj > 0.005 ~ "*",
+                              p.adj < 0.005 & p.adj > 0.0005 ~ "**",
+                              p.adj < 0.0005 ~ "***",
+                              TRUE ~ "ns"))
+
+# 5. Visualize
+# Median / SD
+p.LA.genes <- mydata %>%
+  group_by(NAME, predicted.celltype.l2, DEPTH) %>%
+  summarise(m = median(count_0), sd = sd(count_0)) %>%
+  ungroup() %>%
+  filter(predicted.celltype.l2 %in% c("B naive","CD14 Mono","CD16 Mono","CD4 Naive","CD4 TCM","CD8 Naive","CD8 TEM","cDC2","pDC","NK","gdT","MAIT")) %>%
+  left_join(mydata.stats %>% select(predicted.celltype.l2, p.signif), by = "predicted.celltype.l2") %>%
+  mutate(p.signif = ifelse(is.na(p.signif), "", paste0("(", p.signif, ")")),
+         predicted.celltype.l2 = paste0(predicted.celltype.l2, "  ", p.signif)) %>%
+  ggplot(aes(x = as.numeric(as.character(DEPTH)), color = NAME))  +
+  geom_hline(yintercept = seq(1000,6000,1000), linetype = "dashed", color = "darkgrey") +
+  geom_point(aes(y = m), alpha = 0.75) +
+  geom_ribbon(aes(ymin = m-sd, ymax = m+sd, fill = NAME), alpha = 0.15, colour = NA) +
+  geom_line(aes(y = m, group = NAME)) +
+  theme_bw(base_size = 24) +
+  theme(legend.title = element_blank(),
+        axis.text.x = element_text(size = 14, angle = 45, hjust = 1), panel.grid.major = element_line(color = "white"), panel.grid.minor = element_line(color = "white")) +
+  xlab("Downsampled Reads") +
+  ylab("Detected Genes") +
+  scale_y_continuous(breaks = seq(0,6000,1000) ) +
+  scale_x_continuous(breaks = c(5000, 10000, 20000, 40000, 50000, 75000, 100000, 125000, 250000, 375000, 500000), labels = c("", "", "", "", "50K", "", "100K", "", "250K", "375K", "500K")) +
+  scale_color_manual(values = c("FS - 25 µL" = "#E41A1C",
+                                "FS - 5 µL\nMiniaturized" = "#FF850D",
+                                "SS2" = "#377EB8",
+                                "SS3" = "#4DAF4A",
+                                "SSsc" = "#984EA3")) +
+  facet_wrap("predicted.celltype.l2", nrow = 2) +
+  scale_fill_manual(values = c("FS - 25 µL" = "#E41A1C",
+                               "FS - 5 µL\nMiniaturized" = "#FF850D",
+                               "SS2" = "#377EB8",
+                               "SS3" = "#4DAF4A",
+                               "SSsc" = "#984EA3"))
+
+
+ggsave(p.LA.genes, bg = "white", width = 20, height = 8, filename =  "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/FS_PBMC_exon_downsampling.tiff", dpi = 300)
+
+# 6. Number of cell per cell type
+p.ncells <- mydata %>% 
+  filter(DEPTH == 125000) %>% 
+  filter(predicted.celltype.l2 %in% c("B naive","CD14 Mono","CD16 Mono","CD4 Naive","CD4 TCM","CD8 Naive","CD8 TEM","cDC2","pDC","NK","gdT","MAIT")) %>% 
+  mutate(predicted.celltype.l2 = str_replace(predicted.celltype.l2, " ", "_")) %>%
+  group_by(NAME) %>% 
+  mutate(total = n()) %>%
+  group_by(NAME, predicted.celltype.l2) %>% 
+  summarise(perc = 100*n()/unique(total),
+            n = n()) %>%
+  ungroup() %>%
+  ggplot(aes(x = NAME, y = perc, fill = predicted.celltype.l2)) +
+  geom_bar(stat = "identity", color = "black") +
+  scale_fill_manual(values = predicted.l2.colors) +
+  theme_cowplot(font_size = 20) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 90, hjust = 1)) +
+  xlab("") + ylab("Percentage of Cells") +
+  geom_text(aes(label = n),
+            position = position_stack(vjust = .5), color = "white")
+ggsave(p.ncells, bg = "white", width = 4, height = 8, filename =  "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/FS_PBMC_nCells.tiff", dpi = 300)
+```
+
+```{r FS-LA sc hPBMCs, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
+
+basicSeurat <- function(mysce = NULL, select.ids = mydata$sce.ids, GROUP = NULL, ndims = 15, nfeatures = 3000, out.path = "/home/vincent.hahaut/PBMC_ssce.rds"){
+    library(Seurat)
+    ssce <- Seurat::CreateSeuratObject(counts = as.matrix(assay(mysce[,colnames(mysce) %in% select.ids])))
+    ssce$PLATE <- str_replace_all(str_split(colnames(ssce), "_", simplify = T)[,1], pattern = "X|_", "")
+    ssce$GROUP <- GROUP
+    ssce$DONOR <- case_when(ssce$PLATE %in% c("346", "354") ~  "DONOR 2",
+                            ssce$PLATE %in% c("385") ~  "DONOR 1",
+                            TRUE ~  "DONOR 3")
+    ssce[["percent.mt"]] <- PercentageFeatureSet(ssce, pattern = "^MT-")
+    ssce <- ssce[!grepl(row.names(ssce), pattern = "MT-|MALAT1|RPS|RPL"),] # Remove too highly expressed genes
+    ssce <- Seurat::SCTransform(ssce, vars.to.regress = c("nCount_RNA", "percent.mt"), variable.features.n = nfeatures, seed.use = 42)
+    ssce <- Seurat::RunPCA(ssce, npcs = 40)
+    ssce <- Seurat::RunUMAP(ssce, dims = 1:ndims, umap.method = "uwot")
+    ssce <- Seurat::FindNeighbors(ssce, dims = 1:ndims)
+    ssce <- Seurat::FindClusters(ssce, resolution = 1.5)
+    write_rds(ssce, out.path)
+    return(ssce)
+}
+
+# 1. Select cells of interest
+mydata <- med.exon %>%
+  mutate(NAME = 
+           case_when(
+             CELL == "PBMC" & DENATURATION == "72" & RT_LENGTH == "60" & TTH == "0" & T4 == "0" & LYSIS_VOLUME == "1" & OLIGOT_DILUTION_FACTOR == "5" & METHOD == "FASTSMART" & NACL == "0" & ENZYME %in% c("SIV", "MAXIMA") & PCR == "6" & LYSIS == "TRITON_LOW" & RT_TEMP == "50" & CYCLES > 20 & TSO == "1" ~ "FS-21c", 
+    PLATE %in% c("255", "241", "287", "290", "291") ~ "FS-LA-16c")) %>%
+  filter(!is.na(NAME), !grepl("diluted", ID), !PLATE %in% c("209", "203-1", "203-2"),
+         DEPTH == 125000) %>%
+  mutate(NAME = factor(as.factor(NAME), levels = c("FS-LA-16c", "FS-21c")),
+         sce.ids = str_replace_all(paste0("X", ID, "_125000_1"), "-", ".")) %>%
+  filter(as.numeric(P_uniquely_mapped_reads) > 50, as.numeric(P_too_short_read) < 25)
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+ssce.la <- basicSeurat(mysce = sce, GROUP = "ALL", select.ids = mydata$sce.ids, ndims = 12, nfeatures = 3000, out.path = "/home/vincent.hahaut/PBMC_LA_ssce.rds")
+
+# Add Groups
+ssce.la$GROUP <- ifelse(grepl("X255|X241|X287|X290|X291", colnames(ssce.la)), "FS-LA", "FS")
+ssce.la$PLATE <- ssce.la$orig.ident
+
+# 2. Explore results
+Seurat::DimPlot(ssce.la, group.by = "GROUP")
+Seurat::DimPlot(ssce.la, group.by = "PLATE")
+Seurat::DimPlot(ssce.la, group.by = "seurat_clusters")
+
+# 3. Azimuth Annotation
+# Manually performed on Azimuth website
+pred <- as.data.frame(read_tsv("/home/vincent.hahaut/Downloads/archive/FS_LA_azimuth.tsv"))
+row.names(pred) <- pred$cell
+ssce.la <- AddMetaData(ssce.la, pred)
+
+# 4. Filter data
+# Too few cells supporting these
+# Better remove them
+ssce.la$predicted.celltype.l2 <- ifelse(ssce.la$predicted.celltype.l2 %in% c("dnT", "HSPC", "NK CD56bright", "NK Proliferating", "CD4 CTL"), NA, ssce.la$predicted.celltype.l2)
+ssce.la$predicted.celltype.l2 <- str_replace_all(ssce.la$predicted.celltype.l2, " ", "_")
+
+# 5. Visualize results
+predicted.l2.colors <- c("B_intermediate" = "#6B8993FF",
+"B_memory" = "#D95F02",
+"B_naive" = "#7570B3",
+"Plasmablast" = "#E7298A",
+"CD4_CTL" = "#9C7E70FF",
+"CD4_Naive" = "#E6AB02",
+"CD4_Proliferating" = "#A6761D",
+"CD4_TCM" = "#AEADB0FF",
+"CD4_TEM" = "#0C5BB0FF",
+"Treg" = "#94D4D4FF",
+"CD8_Naive" = "#15983DFF",
+"CD8_Proliferating" = "#EC579AFF",
+"CD8_TCM" = "#A1C720FF",
+"CD8_TEM" = "black",
+"cDC2" = "#FA6B09FF", 
+"pDC" = "#9DDAF5FF",
+"CD14_Mono" = "#66A61E", 
+"CD16_Mono" = "#9A703EFF",
+"NK" = "#EE0011FF", 
+"Eryth" = "#666666",
+"Platelet" = "#16A08CFF",
+"gdT" = "#9966CC",
+"MAIT" = "#11776CFF")
+
+plot_grid(Seurat::DimPlot(ssce.la, group.by = "predicted.celltype.l2", label = T, cols = mycolors) + scale_color_manual(values = predicted.l2.colors),
+          Seurat::DimPlot(ssce.la, group.by = "GROUP"),
+          Seurat::DimPlot(ssce.la, group.by = "PLATE"),
+          Seurat::DimPlot(ssce.la, group.by = "seurat_clusters", label = T))
+
+# markers <- FindAllMarkers(ssce.la, logfc.threshold = 0.75, min.pct = 0.2, test.use = "MAST")
+
+ggsave(filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/DimPlot_FS_LA.tiff", 
+       plot_grid(rel_widths = c(0.4,0.4, 0.2),
+  Seurat::DimPlot(ssce.la, group.by = "GROUP", pt.size = 1.25, cols = c("#FF850D", "#7f3fb2")),
+  Seurat::DimPlot(ssce.la, group.by = "predicted.celltype.l2", pt.size = 1.25, cols = mycolors) + 
+    scale_color_manual(values = predicted.l2.colors) +
+    theme(legend.position = "none"),
+  get_legend(Seurat::DimPlot(ssce.la, group.by = "predicted.celltype.l2", pt.size = 1.25, cols = mycolors) + 
+    scale_color_manual(values = predicted.l2.colors)), nrow = 1), dpi = 300, width = 16, height = 6, bg = "white")
+
+ggsave(filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/DimPlot_FS_LA.predicted.tiff", bg = "white",  width = 8, height = 8,
+  Seurat::DimPlot(ssce.la, group.by = "predicted.celltype.l2", pt.size = 1.25, cols = mycolors) + 
+    scale_color_manual(values = predicted.l2.colors) +
+    theme(legend.position = "none"))
+
+# 6. Heatmap
+ssce.la <- ScaleData(ssce.la, features = row.names(ssce.la))
+makeHeatmap <- function(mysce = NULL, size = 5, cell_type = NULL){
+  markers <- data_frame(
+    B_intermediate = c("MS4A1","TNFRSF13B","IGHM","IGHD","AIM2","CD79A","LINC01857","RALGPS2","BANK1","CD79B", "CD3D"),
+    B_memory =c("MS4A1","COCH","AIM2","BANK1","SSPN","CD79A","TEX9","RALGPS2","TNFRSF13C","LINC01781", ""),
+    B_naive =c("IGHM","IGHD","CD79A","IL4R","MS4A1","CXCR4","BTG1","TCL1A","CD79B","YBX3", ""),
+    Plasmablast =c("IGHA2","MZB1","TNFRSF17","DERL3","TXNDC5","TNFRSF13B","POU2AF1","CPNE5","HRASLS2","NT5DC2", ""),
+    CD4_CTL =c("GZMH","CD4","FGFBP2","ITGB1","GZMA","CST7","GNLY","B2M","IL32","NKG7", ""),
+    CD4_Naive =c("TCF7","CD4","CCR7","IL7R","FHIT","LEF1","MAL","NOSIP","LDHB","PIK3IP1", "CD3D"),
+    CD4_Proliferating =c("MKI67","TOP2A","PCLAF","CENPF","TYMS","NUSAP1","ASPM","PTTG1","TPX2","RRM2", ""),
+    CD4_TCM =c("IL7R","TMSB10","CD4","ITGB1","LTB","TRAC","AQP3","LDHB","IL32","MAL", ""),
+    CD4_TEM =c("IL7R","CCL5","FYB1","GZMK","IL32","GZMA","KLRB1","TRAC","LTB","AQP3", ""),
+    Treg =c("RTKN2","FOXP3","AC133644.2","CD4","IL2RA","TIGIT","CTLA4","FCRL3","LAIR2","IKZF2", ""),
+    CD8_Naive =c("CD8B","S100B","CCR7","RGS10","NOSIP","LINC02446","LEF1","CRTAM","CD8A","OXNAD1", "CD3D"),
+    CD8_Proliferating =c("MKI67","CD8B","TYMS","TRAC","PCLAF","CD3D","CLSPN","CD3G","TK1","RRM2", ""),
+    CD8_TCM =c("CD8B","ANXA1","CD8A","KRT1","LINC02446","YBX3","IL7R","TRAC","NELL2","LDHB", ""),
+    CD8_TEM =c("CCL5","GZMH","CD8A","TRAC","KLRD1","NKG7","GZMK","CST7","CD8B","TRGC2", ""),
+    # ASDC =c("PPP1R14A","LILRA4","AXL","IL3RA","SCT","SCN9A","LGMN","DNASE1L3","CLEC4C","GAS6"),
+    # cDC1 =c("CLEC9A","DNASE1L3","C1orf54","IDO1","CLNK","CADM1","FLT3","ENPP1","XCR1","NDRG2"),
+    cDC2 =c("FCER1A","HLA-DQA1","CLEC10A","CD1C","ENHO","PLD4","GSN","SLC38A1","NDRG2","AFF3", ""),
+    pDC =c("ITM2C","PLD4","SERPINF1","LILRA4","IL3RA","TPM2","MZB1","SPIB","IRF4","SMPD3", ""),
+    CD14_Mono =c("S100A9","CTSS","S100A8","LYZ","VCAN","S100A12","IL1B","CD14","G0S2","FCN1", ""),
+    CD16_Mono =c("CDKN1C","FCGR3A","PTPRC","LST1","IER5","MS4A7","RHOC","IFITM3","AIF1","HES4", ""),
+    NK =c("GNLY","TYROBP","NKG7","FCER1G","GZMB","TRDC","PRF1","FGFBP2","SPON2","KLRF1", "CD3D"),
+    # NK_Proliferating =c("MKI67","KLRF1","TYMS","TRDC","TOP2A","FCER1G","PCLAF","CD247","CLSPN","ASPM"),
+    # NK_CD56bright =c("XCL2","FCER1G","SPINK2","TRDC","KLRC1","XCL1","SPTSSB","PPP1R9A","NCAM1","TNFRSF11A"),
+    Eryth =c("HBD","HBM","AHSP","ALAS2","CA1","SLC4A1","IFIT1B","TRIM58","SELENBP1","TMCC2", ""),
+    # HSPC =c("SPINK2","PRSS57","CYTL1","EGFL7","GATA2","CD34","SMIM24","AVP","MYB","LAPTM4B"),
+    Platelet =c("PPBP","PF4","NRGN","GNG11","CAVIN2","TUBB1","CLU","HIST1H2AC","RGS18","GP9", ""),
+    # ILC =c("KIT","TRDC","TTLL10","LINC01229","SOX4","KLRB1","TNFRSF18","TNFRSF4","IL1R1","HPGDS"),
+    #dnT =c("PTPN3","MIR4422HG","NUCB2","CAV1","DTHD1","GZMA","MYB","FXYD2","GZMK","AC004585.1"),
+    gdT =c("TRDC","TRGC1","TRGC2","KLRC1","NKG7","TRDV2","CD7","TRGV9","KLRD1","KLRG1", "CD3D"),
+    MAIT =c("KLRB1","NKG7","GZMK","IL7R","SLC4A10","GZMA","CXCR6","PRSS35","RBM24","NCR3", "")
+  )
+
+  DoHeatmap(mysce, 
+          cells = colnames(mysce)[mysce$predicted.celltype.l2 %in% cell_type],
+          features = as.vector(unlist(markers[cell_type])), 
+          group.by = "predicted.celltype.l2", group.bar = T, raster = T, angle = 90, size = size, group.colors = predicted.l2.colors) +
+    guides(color=FALSE) +
+    scale_fill_gradientn(colours = rev(RColorBrewer::brewer.pal(name = "RdBu", 8))) %>%
+    return()
+
+} 
+
+# Smaller heatmaps
+# Not used in the final manuscript
+p.heat.B <- makeHeatmap(mysce = ssce.la, cell_type = c("B_intermediate", "B_memory", "B_naive"), size = 0)
+p.heat.CD4 <- makeHeatmap(mysce = ssce.la, cell_type = c("CD4_Naive", "CD4_Proliferating", "CD4_TCM", "CD4_TEM", "Treg"), size = 0)
+p.heat.CD8 <- makeHeatmap(mysce = ssce.la, cell_type = c("CD8_Naive", "CD8_Proliferating", "CD8_TCM", "CD8_TEM"), size = 0)
+p.heat.DC <- makeHeatmap(mysce = ssce.la, cell_type = c("cDC2", "pDC"), size = 0)
+p.heat.mono <- makeHeatmap(mysce = ssce.la, cell_type = c("CD14_Mono", "CD16_Mono"), size = 0)
+p.heat.nk <- makeHeatmap(mysce = ssce.la, cell_type = c("NK"), size = 0)
+p.heat.otherT <- makeHeatmap(mysce = ssce.la, cell_type = c("MAIT", "gdT"), size = 0)
+
+p.heat.all <- makeHeatmap(mysce = ssce.la, cell_type = 
+                               c("B_intermediate", "B_memory", "B_naive","CD4_Naive", "CD4_Proliferating", "CD4_TCM", "CD4_TEM", "Treg","MAIT", "gdT","CD8_Naive", "CD8_Proliferating", "CD8_TCM", "CD8_TEM","CD14_Mono", "CD16_Mono","NK","cDC2", "pDC"))
+
+ggsave(p.heat.all, bg = "white", width = 18, height = 16, filename =  "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/FS_LA_heatmap_all.tiff", dpi = 300)
+ggsave(plot_grid(p.heat.B, p.heat.CD4, p.heat.CD8, p.heat.DC, 
+                 p.heat.mono, p.heat.nk, p.heat.otherT, ncol = 2), bg = "white", width = 12, height = 18, filename =  "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/FS_LA_heatmap_sep.tiff", dpi = 300)
+
+# Label statibility
+
+# 8. Process each downsampling separately
+ssce.la.5K <- basicSeurat(mysce = sce, GROUP = "ALL", select.ids = str_replace(mydata$sce.ids, "_125000_1", "_5000_1"), ndims = 10, nfeatures = 2000, out.path = "/home/vincent.hahaut/PBMC_LA_ssce.5K.rds")
+ssce.la.10K <- basicSeurat(mysce = sce, GROUP = "ALL", select.ids = str_replace(mydata$sce.ids, "_125000_1", "_10000_1"), ndims = 10, nfeatures = 2000, out.path = "/home/vincent.hahaut/PBMC_LA_ssce.10K.rds")
+ssce.la.20K <- basicSeurat(mysce = sce, GROUP = "ALL", select.ids = str_replace(mydata$sce.ids, "_125000_1", "_20000_1"), ndims = 10, nfeatures = 2000, out.path = "/home/vincent.hahaut/PBMC_LA_ssce.20K.rds")
+ssce.la.40K <- basicSeurat(mysce = sce, GROUP = "ALL", select.ids = str_replace(mydata$sce.ids, "_125000_1", "_40000_1"), ndims = 10, nfeatures = 2000, out.path = "/home/vincent.hahaut/PBMC_LA_ssce.40K.rds")
+ssce.la.50K <- basicSeurat(mysce = sce, GROUP = "ALL", select.ids = str_replace(mydata$sce.ids, "_125000_1", "_50000_1"), ndims = 10, nfeatures = 2000, out.path = "/home/vincent.hahaut/PBMC_LA_ssce.50K.rds")
+ssce.la.75K <- basicSeurat(mysce = sce, GROUP = "ALL", select.ids = str_replace(mydata$sce.ids, "_125000_1", "_75000_1"), ndims = 10, nfeatures = 2000, out.path = "/home/vincent.hahaut/PBMC_LA_ssce.75K.rds")
+ssce.la.100K <- basicSeurat(mysce = sce, GROUP = "ALL", select.ids = str_replace(mydata$sce.ids, "_125000_1", "_100000_1"), ndims = 10, nfeatures = 2000, out.path = "/home/vincent.hahaut/PBMC_LA_ssce.100K.rds")
+
+# 9. Azimuth: Manually performed on their website
+
+# 10. Add cell types 
+pred.5k <- read_tsv("/home/vincent.hahaut/Downloads/FS_LA_azimuth.5k.tsv") %>% 
+  mutate(DEPTH = "5K", 
+         ID = str_replace(cell, "_5000_1", "")) %>%
+  select(ID, predicted.celltype.l2, DEPTH)
+pred.10k <- read_tsv("/home/vincent.hahaut/Downloads/FS_LA_azimuth.10k.tsv") %>% 
+  mutate(DEPTH = "10K", 
+         ID = str_replace(cell, "_10000_1", "")) %>%
+  select(ID, predicted.celltype.l2, DEPTH)
+pred.20k <- read_tsv("/home/vincent.hahaut/Downloads/FS_LA_azimuth.20k.tsv") %>% 
+  mutate(DEPTH = "20K", 
+         ID = str_replace(cell, "_20000_1", "")) %>%
+  select(ID, predicted.celltype.l2, DEPTH)
+pred.40k <- read_tsv("/home/vincent.hahaut/Downloads/FS_LA_azimuth.40k.tsv") %>% 
+  mutate(DEPTH = "40K", 
+         ID = str_replace(cell, "_40000_1", "")) %>%
+  select(ID, predicted.celltype.l2, DEPTH)
+pred.50k <- read_tsv("/home/vincent.hahaut/Downloads/FS_LA_azimuth.50k.tsv") %>% 
+  mutate(DEPTH = "50K", 
+         ID = str_replace(cell, "_50000_1", "")) %>%
+  select(ID, predicted.celltype.l2, DEPTH)
+pred.75k <- read_tsv("/home/vincent.hahaut/Downloads/FS_LA_azimuth.75k.tsv") %>% 
+  mutate(DEPTH = "75K", 
+         ID = str_replace(cell, "_75000_1", "")) %>%
+  select(ID, predicted.celltype.l2, DEPTH)
+pred.100k <- read_tsv("/home/vincent.hahaut/Downloads/FS_LA_azimuth.100k.tsv") %>% 
+  mutate(DEPTH = "100K", 
+         ID = str_replace(cell, "_100000_1", "")) %>%
+  select(ID, predicted.celltype.l2, DEPTH)
+pred.125k <- read_tsv("/home/vincent.hahaut/Downloads/FS_LA_azimuth.tsv") %>% 
+  mutate(DEPTH = "125K", 
+         ID = str_replace(cell, "_125000_1", "")) %>%
+  select(ID, predicted.celltype.l2)
+
+# 11. Visualize label stability
+# Compare the cell type at 125K vs other
+p.label.stability <- bind_rows(pred.5k, pred.10k, pred.20k, pred.40k, pred.50k, pred.75k, pred.100k) %>%
+  left_join(pred.125k, by = "ID") %>%
+  mutate(overlap = predicted.celltype.l2.x == predicted.celltype.l2.y,
+         DEPTH = factor(DEPTH, levels = c("5K", "10K", "20K", "40K", "50K", "75K", "100K", "125K")),
+         overlap = ifelse(overlap == TRUE, "Matches Reference Cell Type", "Diverges from Reference Cell Type"),
+         GROUP = ifelse(grepl(ID, pattern = "X255|X241|X287|X290|X291"), "FS-LA", "FS" )) %>%
+  group_by(DEPTH, GROUP) %>%
+  mutate(total = n()) %>%
+  group_by(DEPTH, overlap, GROUP) %>%
+  summarise(perc = 100*n()/unique(total)) %>%
+  ggplot(aes(x = DEPTH, y = perc, fill = overlap)) + 
+  geom_bar(stat="identity", color = "black") +
+  geom_hline(yintercept = 91, linetype = "dashed", color = "lightgrey") +
+  scale_y_continuous(breaks = c(91, seq(0,85,10), 100)) +
+  theme_bw(base_size = 18) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.line = element_blank(),
+        legend.text = element_text(size = 16),
+        legend.position = "bottom",
+        legend.title = element_blank()) +
+  guides(fill = guide_legend(nrow = 2)) +
+  scale_fill_brewer(palette = "Set1") +
+  xlab("Downsampled Reads") + 
+  ylab("Cell (%)") + 
+  facet_wrap("GROUP")
+
+ggsave(p.label.stability, bg = "white", width = 8, height = 6, filename =  "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/FS_LA_label.statiblity.tiff", dpi = 300)
+```
+
+```{r Low Amplification, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
+
+# 1. Select cells of interest
+mydata <- med.exon %>%
+  mutate(NAME = 
+           case_when(
+             CELL == "PBMC" & DENATURATION == "72" & RT_LENGTH == "60" & TTH == "0" & T4 == "0" & 
+               LYSIS_VOLUME == "1" & OLIGOT_DILUTION_FACTOR == "5" & METHOD == "FASTSMART" & NACL == "0" & 
+               ENZYME %in% c("SIV", "MAXIMA") & PCR == "6" & LYSIS == "TRITON_LOW" & RT_TEMP == "50" & 
+               CYCLES > 20 & TSO == "1" ~ "FS-21c", 
+             PLATE %in% c("255", "241", "287", "290", "291") ~ "FS-LA-16c")) %>%
+  # Low quality samples
+  filter(!is.na(NAME), !grepl("diluted", ID), !PLATE %in% c("209", "203-1", "203-2"),
+         DEPTH == 250000) %>%
+  mutate(NAME = factor(as.factor(NAME), levels = c("FS-LA-16c", "FS-21c")),
+         sce.ids = str_replace_all(paste0("X", ID, "_250000_1"), "-", ".")) 
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+# 2. General Statistics
+p.sumL <- summaryPlots(mydata = mydata, title = "LOWAMP_PBMC", mycols = c(
+  "FS-21c" = "#E41A1C", 
+  "FS-LA-16c" = "#A1DAB4"))
+
+# 3. Coverage
+# Not used in the final version
+mycover <- right_join(cover, mydata %>% select(ID, NAME), by = "ID") %>%
+  gather(Percentile, reads, -ID, -NAME) %>%
+  filter(reads > 0) %>%
+  group_by(ID) %>%
+  mutate(percentage = 100*reads / sum(reads)) %>%
+  group_by(NAME, Percentile) %>%
+  summarise(mean.c = mean(percentage),
+            sd.c = sd(percentage)) %>%
+  ungroup() 
+
+p.cover <- ggplot(mycover, aes(x = as.numeric(Percentile), color = as.factor(NAME), fill = as.factor(NAME))) +
+  geom_ribbon(aes(ymin = mean.c - sd.c, ymax = mean.c + sd.c), colour = NA) +
+  geom_line(aes(y=mean.c), size = 1.25) +
+  theme_cowplot() +
+  scale_color_manual(values = c(
+    "FS-21c" = "#E41A1C", 
+    "FS-LA-16c" = "#A1DAB4")) +
+  scale_fill_manual(values = c("FS-21c" = alpha("#E41A1C", 0.15), "FS-LA-16c" = alpha("#A1DAB4", 0.15))) +
+  xlab("Gene Body Percentile (5'->3')") +
+  ylab("Percentage Coverage") +
+  theme(legend.title = element_blank(),
+        legend.text = element_text(size = 24),
+        axis.text = element_text(size = 20),
+        axis.title = element_text(size = 20)) + 
+  theme(strip.background = element_blank(),
+        strip.text = element_text(face = "bold"))
+
+ggsave(p.cover, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/PBMC_LOWAMP_geneBodyCoverage.tiff"), dpi = 200, height = 6, width = 8, bg = "white")
+ggsave(p.sumL[[2]], filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/PBMC_LOWAMP_STAR.tiff"), dpi = 200, height = 6, width = 16, bg = "white")
+ggsave(p.sumL[[3]], filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/PBMC_LOWAMP_RESQC.tiff"), dpi = 200, width = 24, height = 6, bg = "white")
+
+ggsave(p.sumL[[1]], filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/PBMC_LOWAMP_genes.tiff"), dpi = 200, bg = "white", height = 6, width = 8)
+ggsave(
+  plot_grid(
+    plot_grid(p.cover, p.sumL[[2]], ncol = 2, rel_widths = c(0.33, 0.66), labels = "auto", label_size = 28), p.sumL[[3]], nrow = 2, labels = c("", "c"), label_size = 28), filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/PBMC_LOW_STATS.tiff"), dpi = 200, bg = "white",height = 12, width = 24)
+
+# 4. hPBMC (10, 12, 16 PCR cycles)
+
+# 4.1. Select cells of interest
+mydata <- med.exon %>%
+  mutate(NAME = 
+           case_when(
+             CELL == "PBMC" & DENATURATION == "72" & RT_LENGTH == "60" & TTH == "0" & T4 == "0" & LYSIS_VOLUME == "1" & OLIGOT_DILUTION_FACTOR == "5" & METHOD == "FASTSMART" & NACL == "0" & ENZYME %in% c("SIV", "MAXIMA") & 
+               PCR == "6" & LYSIS == "TRITON_LOW" & RT_TEMP == "50" & CYCLES > 20 & TSO == "1" ~ "FS-21c", 
+             PLATE %in% c("255", "241", "287", "290", "291") ~ "FS-LA-16c",
+             PLATE %in% c("288") ~ "FS-LA-10c",
+             PLATE %in% c("289") ~ "FS-LA-12c")) %>%
+  # Remove low quality ones
+  filter(!is.na(NAME), !grepl("diluted", ID), !PLATE %in% c("209", "203-1", "203-2"),
+         DEPTH == 125000) %>%
+  mutate(NAME = factor(as.factor(NAME), levels = c("FS-21c", "FS-LA-16c", "FS-LA-12c", "FS-LA-10c")),
+         sce.ids = str_replace_all(paste0("X", ID, "_125000_1"), "-", ".")) %>%
+  filter(as.numeric(as.character(P_uniquely_mapped_reads)) > 50 & as.numeric(as.character(P_too_short_read)) < 25)
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+# 4.2. General Statistics
+summaryPlots(mydata, "PBMC-LowAmp_Summary",mycols = c(
+  "FS-21c" = "#E41A1C",
+  "FS-LA-10c" = "#FFFFCC",
+  "FS-LA-12c" = "#A1DAB4",
+  "FS-LA-16c" = "#41B6C4"))
+
+# 4.3. Read tag distribution (intergenic / intronic / CDS)
+
+# 4.3.1. Tidy
+resqc.tmp <- filter(resqc, ID %in% mydata$ID) %>%
+  select(ID, UTR3_Exons, UTR5_Exons, CDS_Exons, Introns, TES_down_10kb, TSS_up_10kb, totalReadTags) %>%
+  mutate(Intergenic = totalReadTags - UTR3_Exons - UTR5_Exons - CDS_Exons - Introns - TES_down_10kb - TSS_up_10kb) %>%
+  select(ID, Introns, CDS_Exons, Intergenic, totalReadTags) %>%
+  gather(key, val, -ID, -totalReadTags) %>%
+  left_join(mydata %>% select(ID, NAME)) %>%
+  mutate(perc = 100*val/totalReadTags) %>%
+  mutate(GROUP = NAME,
+         key = factor(as.factor(key), levels = c("CDS_Exons", "Intergenic", "Introns"))) %>%
+  group_by(GROUP, key) %>%
+  summarise(m = mean(perc),
+            ymin = mean(perc) - sd(perc),
+            ymax = mean(perc) + sd(perc)) %>%
+  ungroup() 
+
+# 4.3.2. Line/Dot graph of the mean / sd
+pintergenic.pbmc <- ggplot(data = resqc.tmp) +
+  geom_hline(yintercept = seq(0,65,5), linetype = "dotted", color = "darkgrey")+
+  geom_line(aes(x = GROUP, y = m, color = key, group = key), size = 1.75, position= position_dodge(0.1)) +
+  geom_linerange(aes(x = GROUP, ymin = ymin, ymax = ymax, color = key), size = 1, position= position_dodge(0.1)) +
+  geom_point(aes(x = GROUP, y = m, color = key, fill = key), colour="black",pch=21, size = 3, position= position_dodge(0.1)) +
+  scale_y_continuous(breaks = seq(0,70, 10)) +
+  theme_cowplot(font_size = 18) +
+  theme(legend.position = "bottom", 
+        legend.title = element_blank(),
+        axis.text = element_text(size = 16),
+        legend.text = element_text(size = 18)) +
+  scale_color_brewer(palette = "Dark2") +
+  scale_fill_brewer(palette = "Dark2") +
+  ylab("Read Tags (%)") +
+  xlab("") 
+
+ggsave(pintergenic.pbmc, 
+       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/PBMC_lowAmplificationCycles8CYCLES_RESQC.tiff", dpi = 300, bg = "white", width = 8, height = 6)
+
+
+# 5. Downsampling gene counts - cell types
+
+# 5.1. Tidy 
+# Add cell types
+mydata <- med.exon %>%
+  mutate(NAME = 
+           case_when(
+             CELL == "PBMC" & DENATURATION == "72" & RT_LENGTH == "60" & TTH == "0" & T4 == "0" & LYSIS_VOLUME == "1" & OLIGOT_DILUTION_FACTOR == "5" & METHOD == "FASTSMART" & NACL == "0" & ENZYME %in% c("SIV", "MAXIMA") & 
+               PCR == "6" & LYSIS == "TRITON_LOW" & RT_TEMP == "50" & CYCLES > 20 & TSO == "1" ~ "FS-21c", 
+             PLATE %in% c("255", "241", "287", "290", "291") ~ "FS-LA-16c")) %>%
+  filter(!is.na(NAME), !grepl("diluted", ID), !PLATE %in% c("209", "203-1", "203-2")) %>%
+  left_join(
+    read_tsv("/home/vincent.hahaut/Downloads/archive/FS_LA_azimuth.tsv") %>% 
+      select(cell, predicted.celltype.l2) %>% 
+      mutate(ID = str_replace_all(pattern = "X|_125000_1", replace = "", cell),
+             ID = str_replace_all(pattern = "\\.", replace = "-", ID)), by = "ID"
+  ) %>%
+  filter(!is.na(predicted.celltype.l2), 
+         !is.na(DEPTH),
+         predicted.celltype.l2 != "other") %>%
+  mutate(NAME = factor(as.factor(NAME), levels = c("FS-LA-16c", "FS-21c")),
+         DEPTH = factor(DEPTH, levels = c("5000", "10000", "20000", "40000", "50000","75000","100000","125000","250000","375000",  "500000", "625000", "750000", "1000000", "1250000", "1500000"))) %>%
+  filter(DEPTH %in% c("5000", "10000", "20000", "40000", "50000","75000","100000","125000","250000", "375000", "500000"),
+         as.numeric(P_uniquely_mapped_reads) > 50, as.numeric(P_too_short_read) < 25)
+
+# 2. Statistical comparison
+filter(mydata, DEPTH %in% c(125000)) %>%
+  filter(predicted.celltype.l2 %in% c("B naive","CD14 Mono","CD16 Mono","CD4 Naive","cDC2", "pDC", "CD4 TCM","CD8 Naive","CD8 TEM","NK","gdT","MAIT")) %>%
+  group_by(predicted.celltype.l2) %>%
+  do(w = wilcox.test(count_0 ~ NAME, data=.)) %>% 
+  summarise(cell_type = unique(predicted.celltype.l2),
+            pval = w$p.value) %>%
+  ungroup() %>%
+  mutate(p.adj = p.adjust(pval, method = "bonferroni"),
+         p.signif = case_when(p.adj < 0.05 & p.adj > 0.005 ~ "*",
+                              p.adj < 0.005 & p.adj > 0.0005 ~ "**",
+                              p.adj < 0.0005 ~ "***",
+                              TRUE ~ "ns"))
+
+# 3. Visualize (median / sd)
+p.LA.genes <- mydata %>%
+  group_by(NAME, predicted.celltype.l2, DEPTH) %>%
+  summarise(m = median(count_0), sd = sd(count_0), n = n()) %>%
+  ungroup() %>%
+  filter(predicted.celltype.l2 %in% c("B naive","CD14 Mono","CD16 Mono","CD4 Naive","CD4 TCM","CD8 Naive","CD8 TEM","cDC2","pDC","NK","gdT","MAIT"),
+         n > 2) %>%
+  mutate(predicted.celltype.l2 = ifelse(predicted.celltype.l2 == "CD8 TEM", paste0(predicted.celltype.l2, " (*)"), paste0(predicted.celltype.l2, " (ns)"))) %>%
+  ggplot(aes(x = as.numeric(as.character(DEPTH)), color = NAME))  +
+  geom_hline(yintercept = seq(1000,6000,1000), linetype = "dashed", color = "darkgrey") +
+  geom_point(aes(y = m), alpha = 0.75) +
+  geom_ribbon(aes(ymin = m-sd, ymax = m+sd, fill = NAME), alpha = 0.15, colour = NA) +
+  geom_line(aes(y = m, group = NAME)) +
+  theme_bw(base_size = 24) +
+  theme(legend.title = element_blank(),
+        axis.text.x = element_text(size = 14, angle = 45, hjust = 1), panel.grid.major = element_line(color = "white"), panel.grid.minor = element_line(color = "white")) +
+  xlab("Downsampled Reads") +
+  ylab("Detected Genes") +
+  scale_y_continuous(breaks = seq(0,6000,1000) ) +
+  scale_x_continuous(breaks = c(5000, 10000, 20000, 40000, 50000, 75000, 100000, 125000, 250000, 375000, 500000), labels = c("", "", "", "", "50K", "", "100K", "", "250K", "375K", "500K")) +
+  scale_color_manual(values = c("#FF850D", "#7f3fb2")) + 
+  scale_fill_manual(values = c("#FF850D", "#7f3fb2")) + 
+  facet_wrap("predicted.celltype.l2", nrow = 2)
+
+ggsave(p.LA.genes, bg = "white", width = 20, height = 8, filename =  "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/FS_LA_exon_downsampling.tiff", dpi = 300)
+```
+
+

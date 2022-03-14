@@ -1,0 +1,506 @@
+---
+title: "Organoids w18 - 10x"
+author: "V. Hahaut, D. Pavlinic & S. Picelli"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: html_document
+---
+
+NB: Only one sample processed. The loops are remnants from other scripts.
+
+```{r LIBRARIES, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
+
+# 1. Load Required elements
+INPUT <- "/home/vincent.hahaut/data_storage/ORGANOIDS_W18/"
+OUTPUT <- "/home/vincent.hahaut/data_storage/ORGANOIDS_W18/RESULTS/"
+source("~/Desktop/FLASH-Seq/R/general/6_singleCell_functions.R")
+
+suppressWarnings(dir.create(OUTPUT))
+setwd(OUTPUT)
+
+suppressPackageStartupMessages(library(Seurat))
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(cowplot))
+
+# 2. Define colors
+mycolors <- as.vector(c(yarrr::piratepal(palette = "basel"), 
+                        yarrr::piratepal(palette = "info"), 
+                        yarrr::piratepal(palette = "pony"), 
+                        yarrr::piratepal(palette = "eternal"), 
+                        yarrr::piratepal(palette = "espresso")))
+
+celltype.colors <- function(){c(
+"Photoreceptor/Bipolar Fate"="#990000",
+"Rods"="#15983DFF",
+"Cone Fate"="#EC579AFF",
+"Müller Fate"="#FA6B09FF",
+"Müller Cells"="#149BEDFF",
+"Bipolar Fate"="#A1C720FF",
+"Bipolar Cells (OFF)"="#FEC10BFF",
+"Bipolar Cells (ON)"="#16A08CFF",
+"Amacrine Cells (GABA)"="#9A703EFF",
+"Horizontal Cells"= "#F5BACFFF",
+"Amacrine/Horizontal Fate"="#6B8993FF",
+"Glia"="#F6F0D4FF",
+"Proliferating Cells"="#95CE8AFF",
+"Apoptotic Cells"= "#1f72b0",
+"Cones"="#94D4D4FF",
+"Rod Fate" = "#dda060",
+"Photoreceptor Fate" = "#F1F3E8FF")}
+
+
+group.ids <- function(){
+  c("ORGANOIDS_W18"="w18")
+}
+
+ID.colors <- function(){c("ORGANOIDS_W18"="#0C5BB0FF")}
+
+# 3. Mitochondria
+gtf <- as.data.frame(rtracklayer::import("/home/vincent.hahaut/data_storage/REFERENCES/hsap_fastsmart/REFERENCE/GTF/gencode.v34.primary_assembly.annotation.gtf"))
+mitochondrial.gene <- gtf$gene_name[gtf$seqnames == "chrM"] %>% unique()
+
+unwanted <- gtf %>% filter(gene_type %in% c("rRNA_pseudogene", "rRNA", "Mt_rRNA") | grepl("^RPL|^RPS|MALAT1", gene_name)) %>% dplyr::select(gene_name, transcript_id) %>% pivot_longer(cols = c(gene_name, transcript_id)) %>% select(value) %>% distinct()
+
+```
+
+
+```{Ambiant RNA decontamination, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
+
+library(SoupX)
+
+# 0. Path to the 10x objects
+h5.path <- list.files(INPUT, recursive = TRUE, pattern = "filtered_feature_bc_matrix.h5", include.dirs = TRUE, full.names = TRUE)
+sample.id <- "ORGANOIDS_W18"
+white_list <- read_table("/home/vincent.hahaut/data_storage/binaries/cellranger-3.1.0/cellranger-cs/3.1.0/lib/python/cellranger/barcodes/3M-february-2018.txt.gz", col_names = FALSE)
+
+for(i in 1:length(sample.id)){
+  
+  message(paste0("ID: ", sample.id[i]))
+  
+  dir.create(paste0(INPUT, sample.id[i]))
+  dir.create(paste0(INPUT, sample.id[i], "/SoupX/"))
+
+  # 1. Load Data
+  tod = Seurat::Read10X(paste0(INPUT, sample.id[i], "/outs/raw_feature_bc_matrix/"))
+  toc = Seurat::Read10X(paste0(INPUT, sample.id[i], "/outs/filtered_feature_bc_matrix/"))
+
+  # 2. Identify empty droplets using DropletUtils
+  tod.nonEmpty.ids <- DropletUtils::emptyDrops(tod, lower = 250)
+  cells.id <- row.names(tod.nonEmpty.ids)[which(tod.nonEmpty.ids$FDR < 0.1)]
+  
+  # 3. Filter out cells not-included in the white-list
+  # Safety check
+  cells.id <- cells.id[str_replace(cells.id, "-1", "") %in% white_list$X1]
+ 
+  # 4. Cluster information on the non-empty Matrix
+  tod.nonEmpty <- tod[,colnames(tod) %in% cells.id]
+  
+  sce <- CreateSeuratObject(counts = tod.nonEmpty)
+  sce <- basicSeurat(sce, nfeatures = 2000, npcs = 20, resolution = 0.25, SCT = FALSE)
+
+  # 5. Run SoupX with:
+  # tod = unfiltered count matrix
+  # toc = non-empty droplets
+  # cluster_labels from the previous
+  sc <- SoupChannel(tod = tod, toc = tod.nonEmpty)
+  sc <- setClusters(sc, setNames(sce$RNA_snn_res.0.25, colnames(sce)))
+  sc <- setDR(sc, sce[["umap"]]@cell.embeddings)
+  pdf(paste0(INPUT, sample.id[i], "/SoupX/", sample.id[i], "_estimation.pdf"))
+  sc <- autoEstCont(sc, forceAccept = TRUE)
+  out = adjustCounts(sc)
+  dev.off()
+  pdf(paste0(INPUT, sample.id[i], "/SoupX/", sample.id[i], "_umapChanges.pdf"))
+  plotChangeMap(sc, out, "NRL")
+  dev.off()
+  
+  # 6. Save results
+  DropletUtils:::write10xCounts(path = paste0(INPUT, sample.id[i], "/SoupX/SoupX_Corrected"), overwrite = TRUE, x = out)
+
+}
+
+# found <6% ambiant RNA  
+
+```
+
+```{r cellRanger to R, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
+
+# 1. Paths
+gex.path <- list.files(INPUT, recursive = TRUE, pattern = "SoupX_Corrected$", include.dirs = TRUE, full.names = TRUE)
+stats.path <- list.files(INPUT, recursive = TRUE, pattern = "metrics_summary.csv", include.dirs = TRUE, full.names = TRUE)
+stats.path <- stats.path[grepl("outs", stats.path)]
+sample.id <- "ORGANOIDS_W18"
+
+# List of unwanted genes
+# Ribosomal, mitochondrial, malat1, ... 
+excluded.genes <- read.table("/home/vincent.hahaut/Desktop/GITHUB/IOB/CellRanger/human.filter.gene.txt", sep = "\t", header = FALSE)$V1
+
+# 2. Read Files and Filter unwanted genes
+sce <- lapply(1:length(gex.path), function(x) read10xData(
+  gex.path = gex.path[x], 
+  stat.path = stats.path[x], 
+  sample.id = sample.id[x], 
+  mitochondrial.gene = mitochondrial.gene, 
+  excluded.genes = excluded.genes, 
+  GROUP.function = NULL)
+)
+
+# 3. Process raw results to get a better idea of what is there
+sce.processed <- basicSeurat(sce[[1]] , nfeatures = 3000, regress.mito = FALSE, npcs = 20, resolution = 0.5, SCT = TRUE)
+
+# 4. Save intermediate results
+names(sce) <- sample.id
+write_rds(sce, paste0(OUTPUT, "seurat.raw.tmp.rds"))
+write_rds(sce.processed, paste0(OUTPUT, "seurat.raw.processed.rds"))
+
+```
+
+```{r filter out low quality cells, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
+
+# Hard Filters were set after analysing several times the data at different thresholds until finding a sweet spot between loosing low quality cells and keeping high quality ones.
+# Setting nCounts_RNA >1750 would have removed a full cluster of cells with a lot of apoptotic features. 
+# As I was not 100% sure these were really apoptotic I prefered leaving them in it.
+
+sce <- read_rds(paste0(OUTPUT, "seurat.raw.tmp.rds"))
+sample.id <- names(sce)
+
+index <- filter(sce[[1]]@meta.data, 
+         nCount_RNA > 1500 & nCount_RNA < 25000,
+         nFeature_RNA > 250 & 
+         percent.mito > 0.25 & percent.mito < 12.5)
+sce.filtered <- sce[[1]][,colnames(sce[[1]]) %in% row.names(index)]
+write_rds(sce.filtered, paste0(OUTPUT, "seurat.filtered.tmp.rds"))
+
+# Explore
+sce.processed <- read_rds(paste0(OUTPUT, "seurat.raw.processed.rds"))
+plot_grid(FeaturePlot(sce.processed, "nFeature_RNA") + scale_color_viridis_c(),
+          FeaturePlot(sce.processed, "nCount_RNA") + scale_color_viridis_c(),
+          FeaturePlot(sce.processed, "percent.mito") + scale_color_viridis_c())
+sce.processed <- sce.processed[,sce.processed$nCount_RNA < 25000 & sce.processed$nFeature_RNA > 250 & sce.processed$percent.mito < 20]
+plot_grid(FeaturePlot(sce.processed, "nFeature_RNA") + scale_color_viridis_c(),
+          FeaturePlot(sce.processed, "nCount_RNA") + scale_color_viridis_c(),
+          FeaturePlot(sce.processed, "percent.mito") + scale_color_viridis_c())
+sce.processed <- sce.processed[,sce.processed$nCount_RNA > 1500]
+plot_grid(FeaturePlot(sce.processed, "nFeature_RNA") + scale_color_viridis_c(),
+          FeaturePlot(sce.processed, "nCount_RNA") + scale_color_viridis_c(),
+          FeaturePlot(sce.processed, "percent.mito") + scale_color_viridis_c())
+
+
+```
+
+```{R doublets identification, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
+
+library(DoubletFinder)
+sce.filtered <- read_rds(paste0(OUTPUT, "seurat.filtered.tmp.rds"))
+sce.filtered <- list(sce.filtered)
+
+sample.id <- "ORGANOIDS_W18"
+
+ssce.doublets <- list()
+for(i in 1:length(sample.id)){
+  ssce <-sce.filtered[[i]]
+  
+  # 1. pK Identification (no ground-truth)
+  # Generate artificial doublets from existing scRNA-seq data
+  sweep.res <- paramSweep_v3(ssce, PCs = 1:20, num.cores = 10, sct = TRUE)
+  sweep.stats <- summarizeSweep(sweep.res, GT = FALSE)
+  bcmvn <- find.pK(sweep.stats)
+ 
+  index <- which(bcmvn$BCmetric == max(bcmvn$BCmetric))
+  pK <- as.numeric(as.character(bcmvn$pK[index]))
+  
+  doubletBCMVN <- ggplot(bcmvn, aes(x = as.numeric(as.character(pK)), y = MeanBC)) + 
+    geom_point() +
+    geom_vline(color = "darkred", linetype = "dashed", xintercept = pK) +
+    xlab("PK") +
+    geom_line(aes(group = 1)) +
+    theme_bw() 
+  doubletBCMetric <- ggplot(bcmvn, aes(x = as.numeric(as.character(pK)), y = BCmetric)) + 
+    geom_point() +
+    geom_vline(color = "darkred", linetype = "dashed", xintercept = pK) +
+    xlab("PK") +
+    geom_line(aes(group = 1)) +
+    theme_bw()
+
+  # 3. Homotypic Doublet Proportion Estimate
+  homotypic.prop <- modelHomotypic(ssce@meta.data$seurat_clusters)
+  
+  # 10x Doublets (based on 10x expected doublet rate)
+  doublet.perc <- plyr::round_any(unique(ncol(ssce)), 1000)/1000 * 0.008 
+  message(paste0("Estimated Doublet Percentage: ", doublet.perc*100, "%"))
+  nExp_poi <- round(doublet.perc*nrow(ssce@meta.data))
+
+  # Based on the number of recovered cells
+  doublet.stringent.perc <- plyr::round_any(unique(ssce$nCells.total), 1000)/1000 * 0.008 
+  message(paste0("Estimated Doublet Percentage - Strigent: ", doublet.stringent.perc*100, "%"))
+  nExp_poi.stringent <- round(doublet.stringent.perc*nrow(ssce@meta.data))
+
+  # 4. Run DoubletFinder with varying classification stringencies
+  ncols <- ncol(ssce@meta.data)
+  doublets <- doubletFinder_v3(ssce, PCs = 1:20, pN = 0.25, pK = pK, nExp = nExp_poi, reuse.pANN = FALSE, sct = TRUE)@meta.data[,c(ncols+1, ncols+2)]
+  doublets.stringents <- doubletFinder_v3(ssce, PCs = 1:20, pN = 0.25, pK = pK, nExp = nExp_poi.stringent, reuse.pANN = FALSE, sct = TRUE)@meta.data[,c(ncols+1, ncols+2)]
+
+  # 5. Rename the doublet column for consistency
+  doublets$param <- colnames(doublets)[1]
+  colnames(doublets) <- c("pANN", "Doublets", "param.doublets")
+  doublets.stringents$param.stringent <- colnames(doublets.stringents)[1]
+  colnames(doublets.stringents) <- c("pANN.stringent", "Doublets.stringent", "param.doublets.stringent")
+
+  ssce <- AddMetaData(ssce, bind_cols(doublets, doublets.stringents))
+  
+  # 6. Check-up graphs
+  minima <- min(ssce@meta.data$pANN[ssce@meta.data$Doublets == "Doublet"])
+  dat <- with(density(ssce@meta.data$pANN), data.frame(x, y))
+  pAnnPlot <- ggplot(data = dat, mapping = aes(x = x, y = y)) +
+    geom_area(mapping = aes(x = ifelse(x<minima, x, 0)), fill = "blue", alpha = 0.25) +
+    geom_line(alpha = 0.25, size = 1.25) +
+    geom_vline(xintercept = minima, linetype = "dashed", color = "darkred", size = 0.75) +
+    theme_bw() +
+    ylab("Density") + xlab("pANN") + ylim(c(0, max(dat$y)+1)) +
+    annotate(geom = 'text', 
+             label = paste0("Doublets: ", sum(ssce@meta.data$Doublets == "Doublet"),  " - ", round(100*sum(ssce@meta.data$Doublets == "Doublet")/ncol(ssce),2), "%"),
+                            x = 0, y = max(dat$y)+0.85, hjust = 0, vjust = 1, size = 6)
+
+  minima <- min(ssce@meta.data$pANN.stringent[ssce@meta.data$Doublets.stringent == "Doublet"])
+  dat <- with(density(ssce@meta.data$pANN.stringent), data.frame(x, y))
+  pAnnPlot.stringent <- ggplot(data = dat, mapping = aes(x = x, y = y)) +
+    geom_area(mapping = aes(x = ifelse(x<minima, x, 0)), fill = "blue", alpha = 0.25) +
+    geom_line(alpha = 0.25, size = 1.25) +
+    geom_vline(xintercept = minima, linetype = "dashed", color = "darkred", size = 0.75) +
+    theme_bw() +
+    ylab("Density") + xlab("pANN") + ylim(c(0, max(dat$y)+1)) +
+    annotate(geom = 'text', 
+             label = paste0("Doublets: ", sum(ssce@meta.data$Doublets.stringent == "Doublet"),  " - ", round(100*sum(ssce@meta.data$Doublets.stringent == "Doublet")/ncol(ssce),2), "%"),
+                            x = 0, y = max(dat$y)+0.85, hjust = 0, vjust = 1, size = 6)
+
+  ggsave(filename = paste0(OUTPUT, sample.id[i], "/", sample.id[i], "_DoubletSummary.tiff"),
+    plot_grid(doubletBCMVN + ggtitle("Mean BC values"), 
+              doubletBCMetric + ggtitle("Mean-variance normalized bimodality coefficient"), 
+              pAnnPlot + ggtitle("Artificial nearest neighbors"), 
+              pAnnPlot.stringent + ggtitle("Artificial nearest neighbors STRINGENT"), nrow = 2), dpi = 200, width = 18, height = 12, bg = "white")
+
+  # 8. Save individual object for later check-ups
+  ssce.doublets[[i]] <- ssce
+}
+
+# 9. Save Results
+write_rds(ssce.doublets, paste0(OUTPUT, "seurat.doublets.tmp.rds"))
+
+```
+
+```{r final processing, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
+
+ssce.doublets <- read_rds(paste0(OUTPUT, "seurat.doublets.tmp.rds"))
+sce <- read_rds(paste0(OUTPUT, "seurat.raw.tmp.rds"))
+sample.id <- "ORGANOIDS_W18"
+
+# 1. Remove Low quality Cells & Doublets
+index <- colnames(ssce.doublets[[1]][,ssce.doublets[[1]]$Doublets == "Singlet"])
+sce.filtered <- sce$ORGANOIDS_W18[,colnames(sce$ORGANOIDS_W18) %in% index]
+
+# 2. Process Sample
+ssce <- SCTransform(sce.filtered, vars.to.regress = "percent.mito", variable.features.n = 3000, seed.use = 42)
+ssce <- RunPCA(ssce, features = VariableFeatures(object = ssce), npcs = 30)
+# ElbowPlot(ssce, ndims = 30)
+ssce <- FindNeighbors(ssce, dims = 1:20)
+ssce <- FindClusters(ssce, resolution = 1.5)
+ssce <- RunUMAP(ssce, dims = 1:20, n.neighbors = 50)
+
+# 4. Visualise results
+p.diagn <- plot_grid(nrow = 2, 
+           DimPlot(ssce, group.by = "seurat_clusters", cols = mycolors) + ggtitle("Seurat Clusters - 1 res"),
+          FeaturePlot(ssce, features = "percent.mito") + scale_color_viridis_c(option = "viridis") +  ggtitle("Mitochondria (%)"), 
+          FeaturePlot(ssce, features = "nUMI") + scale_color_viridis_c(option = "viridis") +  ggtitle("nUMI"), 
+          FeaturePlot(ssce, features = "nFeature_RNA") + scale_color_viridis_c(option = "viridis") +  ggtitle("nFeatures"))
+
+ggsave(DimPlot(ssce, group.by = "seurat_clusters", pt.size = 1.25, label = T, cols = mycolors), dpi = 300, width = 10, height = 8, bg = "white",
+       file = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/10x_organoids.dimplot.tiff")
+ggsave(p.diagn, dpi = 300, width = 10, height = 8, bg = "white",
+       file = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/10x_organoids.diagnosis.tiff")
+
+# 5. Markers
+markers <- FindAllMarkers(ssce, logfc.threshold = 0.5, test.use = "MAST", only.pos = TRUE)
+
+# 6. Save results
+write_tsv(data.frame(str_replace("ORGANOIDS_W18_", "", string = colnames(ssce))), "/home/vincent.hahaut/data_storage/ORGANOIDS_W18/filtered_barcode.tsv", col_names = F)
+
+# velocyto run -b filtered_barcode.tsv -o ./VELOCYTO -m ../REFERENCES/hsap_fastsmart/REFERENCE/GTF/hg38_rmsk.gtf ORGANOIDS_W18/outs/possorted_genome_bam.bam ../REFERENCES/hsap_fastsmart/REFERENCE/GTF/gencode.v34.primary_assembly.annotation.gtf
+
+# 7. ShinyUMAP
+# Homemade script to visualize UMAP / featurePlots / Markers in a single windows
+# source('~/Desktop/FLASH-Seq/R/general/9_shinyUMAP.R')
+# shinyUMAP(ssce, markers)
+
+# 8. Add Cell type info after analysing the data in ShinyUMAP
+ssce$cell_type <- case_when(ssce$seurat_clusters == 0 ~ "Müller Cells",
+                            ssce$seurat_clusters == 1 ~ "Rod Fate",
+                            ssce$seurat_clusters == 2 ~ "Rod Fate",
+                            ssce$seurat_clusters == 3 ~ "Photoreceptor/Bipolar Fate",
+                            ssce$seurat_clusters == 4 ~ "Müller Cells",
+                            ssce$seurat_clusters == 5 ~ "Cone Fate",
+                            ssce$seurat_clusters == 6 ~ "Rods",
+                            ssce$seurat_clusters == 7 ~ "Amacrine Cells (GABA)",
+                            ssce$seurat_clusters == 8 ~ "Bipolar Fate",
+                            ssce$seurat_clusters == 9 ~ "Rods",
+                            ssce$seurat_clusters == 10 ~ "Amacrine Fate",
+                            ssce$seurat_clusters == 11 ~ "Glia",
+                            ssce$seurat_clusters == 12 ~ "Müller Fate",
+                            ssce$seurat_clusters == 13 ~ "Müller Cells",
+                            ssce$seurat_clusters == 14 ~ "Bipolar Cells (OFF)",
+                            ssce$seurat_clusters == 15 ~ "Apoptotic Cells",
+                            ssce$seurat_clusters == 16 ~ "Horizontal Cells",
+                            ssce$seurat_clusters == 17 ~ "Bipolar Cells (ON)",
+                            ssce$seurat_clusters == 18 ~ "Proliferating Cells",
+                            ssce$seurat_clusters == 19 ~ "Proliferating Cells")
+
+ssce$cell_type <- factor(ssce$cell_type, levels = c("Photoreceptor/Bipolar Fate", "Rod Fate", "Rods", "Cone Fate", "Müller Fate", "Müller Cells", "Bipolar Fate", "Bipolar Cells (OFF)",  "Bipolar Cells (ON)", "Amacrine/Horizontal Fate", "Amacrine Fate", "Amacrine Cells (GABA)", "Horizontal Cells",   "Glia", "Proliferating Cells", "Apoptotic Cells"))
+
+# 9. Save results
+write_rds(ssce, "/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS_10x.processed.rds")
+
+ggsave(DimPlot(ssce, group.by = "cell_type", pt.size = 1.25) + scale_color_manual(values = celltype.colors()), dpi = 300, width = 12, height = 8, bg = "white",
+       file = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/10x_organoids.celltype.tiff")
+
+# 10. Heatmap of top markers
+top.markers <- markers %>% group_by(cluster) %>%  dplyr::slice(1:4)
+
+p.topheat <- DoHeatmap(ssce, 
+          features = top.markers$gene %>% unique, 
+          group.by = "seurat_clusters", group.bar = T, raster = T, angle = 90, size = 8, group.colors = mycolors) +
+    guides(color=FALSE) +
+    scale_fill_gradientn(colours = rev(RColorBrewer::brewer.pal(name = "RdBu", 8))) 
+
+# 11. Dotplot
+# RNA assay is messing up the dotplot function
+ssce[["RNA"]] <- NULL
+Idents(ssce) <- "cell_type"
+p.dotplot <- DotPlot(object = ssce, features = unique(c(
+  # "Photoreceptor/Bipolar Fate"
+  "OTX2", "PRDM1", "RXRG", "NEUROD1", "NEUROD4",
+  # "Rod Fate"
+  "NEUROD1", "CRX",
+  # "Rods"
+  "GNAT1", "PDE6G", "NRL",
+  # "Mature Rods"
+  "RHO", "GNGT1",
+  # "Cone Fate"
+  "RXRG", "PDE6H",
+  # Mature Cones
+  "ARR3", "OPN1SW",
+  # "Müller Cell Fate"
+  "HES5", "HES6",
+  # "Müller Cells"
+  "APOE", "WIF1", "SOX2", 
+  # "Bipolar Fate"
+  "VSX1", "NETO1",
+  # "Bipolar Cells (OFF)"
+  "PRDM8", "GRIK1",
+  # "Bipolar Cells (ON)"
+  "PCP2", "ISL1", "PRKCA", "TRPM1","GRM6",
+  # "Amacrine / Bipolar Fate"
+  "PAX6", "MEIS2", "RBFOX2", "PRDM13", "PTF1A",
+  # "Amacrine Cells (GABA)"
+  "GAD1", "TFAP2A",
+  # "Horizontal Cells"
+  "ONECUT1",  "ONECUT2",
+  # "Glia"
+  "DAPL1", "SFRP2", "COL9A1", 
+  # "Proliferating Cells"
+  "MKI67", "SMC4", 
+  # "Apoptotic Cells"
+  "MALAT1", "NEAT1", "BBC3"))) +
+  coord_flip() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    scale_color_gradientn(colours = rev(RColorBrewer::brewer.pal(name = "RdBu", 8))) +
+  xlab("") + ylab("")
+
+ggsave(p.dotplot, dpi = 300, width = 12, height = 12, bg = "white",
+       file = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/10x_organoids.dotplot.tiff")
+ggsave(p.topheat, dpi = 300, width = 12, height = 10, bg = "white",
+       file = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/10x_organoids.heatmapTop.tiff")
+
+```
+
+```{r export data, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
+
+ssce <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS_10x.processed.rds")
+data.table <- as.matrix(GetAssayData(ssce, slot = "data"))
+meta.data <- ssce@meta.data[c("orig.ident", "cell_type", "nCount_RNA", "percent.mito")]
+
+write.table(data.table, "/home/vincent.hahaut/data_storage/transfer/10x_w18organoids_soupxCounts.txt", sep = "\t", col.names = NA, row.names = T, quote = F)
+write.table(meta.data, "/home/vincent.hahaut/data_storage/transfer/10x_w18organoids_metadata.txt", sep = "\t", col.names = T, quote = F)
+
+```
+
+```{r amacrine - zoom, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
+
+# Not used in the final manuscript
+# Selected only Amacrine cells / horizontal cells
+
+OUTPUT <- "/home/vincent.hahaut/data_storage/ORGANOIDS_W18/RESULTS/"
+ssce.annotated <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS_10x.processed.rds")
+cells <- colnames(ssce.annotated)[ssce.annotated$cell_type %in% c("Amacrine Cells (GABA)", "Amacrine / Horizontal Fate", "Horizontal Cells")]
+
+ssce.doublets <- read_rds(paste0(OUTPUT, "seurat.doublets.tmp.rds"))
+sce <- read_rds(paste0(OUTPUT, "seurat.raw.tmp.rds"))
+sample.id <- "ORGANOIDS_W18"
+
+# 1. Low quality Cells & Doublets
+# Get only the amacrine / Neural / horizontal
+set.seed(42)
+sce <- sce$ORGANOIDS_W18
+sce <- sce[,colnames(sce) %in% colnames(ssce.doublets[[1]])[ssce.doublets[[1]]$Doublets == "Singlet"]]
+sce <- sce[!row.names(sce) %in% unwanted$value,]
+sce.filtered <- sce[,colnames(sce) %in% cells]
+
+# 2. Process Sample
+ssce <- SCTransform(sce.filtered, vars.to.regress = "percent.mito", variable.features.n = 2000, seed.use = 42)
+ssce <- RunPCA(ssce, features = VariableFeatures(object = ssce), npcs = 30)
+ElbowPlot(ssce, ndims = 30)
+ssce <- FindNeighbors(ssce, dims = 1:15)
+ssce <- FindClusters(ssce, resolution = 1)
+ssce <- RunUMAP(ssce, dims = 1:15)
+
+# 4. Visualise results
+p.diagn <- plot_grid(nrow = 2, 
+           DimPlot(ssce, group.by = "seurat_clusters", cols = mycolors) + ggtitle("Seurat Clusters - 1 res"),
+          FeaturePlot(ssce, features = "percent.mito") + scale_color_viridis_c(option = "viridis") +  ggtitle("Mitochondria (%)"), 
+          FeaturePlot(ssce, features = "nUMI") + scale_color_viridis_c(option = "viridis") +  ggtitle("nUMI"), 
+          FeaturePlot(ssce, features = "nFeature_RNA") + scale_color_viridis_c(option = "viridis") +  ggtitle("nFeatures"))
+
+ggsave(DimPlot(ssce, group.by = "seurat_clusters", pt.size = 1.25, label = T, cols = mycolors), dpi = 300, width = 10, height = 8, bg = "white",
+       file = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/10x_organoids.dimplot.downsampled.tiff")
+ggsave(p.diagn, dpi = 300, width = 10, height = 8, bg = "white",
+       file = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/10x_organoids.diagnosis.downsampled.tiff")
+
+# 5. Markers
+markers <- FindAllMarkers(ssce, logfc.threshold = 0.5, test.use = "MAST", only.pos = TRUE)
+
+# 6. ShinyUMAP
+# Homemade script to visualize UMAP / featurePlots / Markers in a single windows
+# shinyUMAP(ssce, markers)
+
+# 7. Heatmap
+ssce$cell_type <- case_when(ssce$seurat_clusters == 0 ~ "Amacrine Fate",
+                            ssce$seurat_clusters == 1 ~ "Amacrine / Horizontal Fate",
+                            ssce$seurat_clusters == 2 ~ "Amacrine Cells (GABA) 1",
+                            ssce$seurat_clusters == 4 ~ "Amacrine Cells (GABA) 2",
+                            ssce$seurat_clusters == 6 ~ "Amacrine Cells (GABA) 3",
+                            # Onecut 1 / 2, some LHX1
+                            ssce$seurat_clusters == 3 ~ "Horizontal Cells 1",
+                            ssce$seurat_clusters == 8 ~ "Horizontal Cells 2",
+                            ssce$seurat_clusters == 5 ~ "Amacrine Fate",
+                            ssce$seurat_clusters == 7 ~ "Amacrine Fate",
+                            )
+
+
+
+
+write_rds(ssce, "/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS_10x.processed.amacrine.rds")
+
+ggsave(DimPlot(ssce, group.by = "cell_type", pt.size = 1.25, cols = mycolors), dpi = 300, width = 12, height = 8, bg = "white",
+       file = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/10x_organoids.celltype.amacrine.tiff")
+            
+
+
+```
+
+

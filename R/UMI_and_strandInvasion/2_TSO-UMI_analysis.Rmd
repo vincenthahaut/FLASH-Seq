@@ -1,0 +1,1553 @@
+---
+title: "UMI - Data Analysis"
+author: "V. Hahaut, D. Pavlinic & S. Picelli."
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: html_document
+---
+
+```{r Prerequisits, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
+
+options(scipen=999)
+
+# 1. LIBRARIES / FUNCTIONS
+library(SummarizedExperiment)
+library(tidyverse)
+library(cowplot)
+source("/home/vincent.hahaut/Desktop/FLASH-Seq/R/general/4_aggregate_files_functions.R")
+
+# 2. ANNOTATIONS
+gtf.path <- "/home/vincent.hahaut/data_storage/REFERENCES/hsap_fastsmart/REFERENCE/GTF/gencode.v34.primary_assembly.annotation.gtf"
+gtf <- rtracklayer::import(gtf.path)
+codingIDs <- gtf$gene_name[gtf$gene_type == "protein_coding"]
+
+# 3. COLORS
+mycolors <- as.vector(c(RColorBrewer::brewer.pal(name = "Dark2", 8),
+                        yarrr::piratepal("basel"), 
+                        yarrr::piratepal("nemo"), 
+                        yarrr::piratepal("appletv"), 
+                        yarrr::piratepal("pony"), 
+                        yarrr::piratepal("info"),
+                        yarrr::piratepal("decision")[-4],
+                        yarrr::piratepal("ipod")))
+
+methodPalette <- function(){scale_fill_manual(values = c("FS" = "#E41A1C",
+                                                         "SS2" = "#377EB8",
+                                                         "SS3" = "#4DAF4A",
+                                                         "SSsc" = "#984EA3")
+)}
+```
+
+## Gene Counts
+
+```{r Internal-UMI detected genes relationship, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
+path <- "/home/vincent.hahaut/data_storage/210322_NB551561_0044_AHNTL2AFX2/STAR/"
+paths <- list.files("/home/vincent.hahaut/data_storage/210322_NB551561_0044_AHNTL2AFX2/STAR/", full.names = TRUE, recursive = TRUE, pattern = ".feature\\.EXON\\.txt")
+
+if(!file.exists("/home/vincent.hahaut/data_storage/FS_intermediate_file/UMI.txt")){
+  
+  ID <- list.files(path)
+    
+  # 1. Prepare for multi-threading
+  suppressPackageStartupMessages(library(doSNOW))
+  suppressPackageStartupMessages(library(doParallel))
+  cl <- makeCluster(15)
+  registerDoSNOW(cl)
+  clusterCall(cl, function() library(tidyverse))
+  
+  # 2. For every read ID - available downsampling depth
+  # detected genes - UMI / internal / UMI+Internal (=ALL)
+  # Get the file path
+  mypaths <- data_frame()
+  for(i in ID){
+    print(i)
+    for(j in c("5000", "10000","20000", "40000", "50000","75000","100000", "125000", "250000")){
+      for(k in c("ALL", "INTERNAL", "UMI")){
+      
+        path.id <- paste0("/home/vincent.hahaut/data_storage/210322_NB551561_0044_AHNTL2AFX2/STAR/", i, "/DOWNSAMPLE/", "DOWN_", j)
+        
+        if(k %in% c("ALL", "INTERNAL")){
+          path.id <- paste0(path.id, "/FEATURECOUNTS/", i, "_", k, "_", j, ".feature.EXON.txt")
+        } else {
+          path.id <- paste0(path.id, "/FEATURECOUNTS/umi.counts.", j, ".tsv.gz")
+        }
+        
+        if(file.exists(path.id)){
+                  mypaths <- bind_rows(mypaths,
+                             data_frame(path = path.id,
+                                        ID = i,
+                                        type = k,
+                                        DEPTH = j))
+                  }
+        }
+    }
+  }
+  
+  # 3. Read detected gene files
+  df.counts <- foreach(i = 1:nrow(mypaths)) %dopar% {
+    
+      mypath <- mypaths$path[i]
+      TYPE = mypaths$type[i]
+      DOWN = mypaths$DEPTH[i]
+      ID = mypaths$ID[i]
+      column = ifelse(TYPE == "UMI", 2, 7)
+      
+      exon <- as.vector(unlist(read_tsv(mypath, comment = "#", col_names = TRUE)[,column]))
+
+      return(data_frame(ID = ID,
+                        TYPE = TYPE,
+                        DOWN = DOWN,
+                        MOLECULES = sum(exon),
+                        count.0.exon = sum(exon > 0),
+                        count.1.exon = sum(exon > 1),
+                        count.5.exon = sum(exon > 5)))
+  }
+      
+  stopCluster(cl)
+  
+  # 4. Aggregate
+  df.aggregated <- bind_rows(df.counts)
+  
+  # 5. Save Results
+  df.umi <- filter(df.aggregated, TYPE == "UMI")
+  colnames(df.umi) <- c("ID", "TYPE", "DOWN", "MOLECULES", "count.0.umi", "count.1.umi", "count.5.umi")
+  df.all <- filter(df.aggregated, TYPE != "UMI") %>% select(-MOLECULES)
+  write.table(df.umi, "/home/vincent.hahaut/data_storage/FS_intermediate_file/UMI.txt", sep = "\t", row.names = F, quote = F)
+  write.table(df.all, "/home/vincent.hahaut/data_storage/FS_intermediate_file/ALL.txt", sep = "\t", row.names = F, quote = F)
+
+}
+
+
+group1 <- c("SS3","TSO-ATAAC\nSTRT-dT","TSO-CAGCA\nSTRT-dT","TSO-FS-UMI\nSTRT-dT", "TSO-AAGCA\nSTRT-dT", "SS3-CGTAC\nFS-dT", "TSO-CTAAC\nFS-dT", "TSO-CATCA\nSTRT-dT","TSO-CTGAC\nSTRT-dT","TSO-ATGAC\nSTRT-dT","TSO-CTAAC\nSTRT-dT", "SS3\nHagemann-J.")
+group2 <- c("SS3", "TSO-ATAAC\nFS-dT","TSO-CAGCA\nFS-dT","TSO-FS-UMI\nFS-dT","TSO-CAGCA\nSS3-dT","TSO-FS-UMI\nSS3-dT")
+group3 <- c("TSO-CAGCA\nSTRT-dT","LA-TSO-CAGCA\nSTRT-dT")
+
+mycols <- c("SS3" = "#e6194B",
+  "TSO-ATAAC\nSTRT-dT"= "#3cb44b",
+  "TSO-CAGCA\nSTRT-dT"= "#ffe119",
+  "TSO-FS-UMI\nSTRT-dT"= "#4363d8",
+  "TSO-ATAAC\nFS-dT"= "#f58231",
+  "TSO-CAGCA\nFS-dT"= "#42d4f4",
+  "TSO-FS-UMI\nFS-dT"= "#f032e6",
+  "TSO-CAGCA\nSS3-dT"= "#fabed4",
+  "TSO-FS-UMI\nSS3-dT"= "#469990",
+  "SS3-CGTAC\nFS-dT" = "#d5dde8",
+  "TSO-CTAAC\nFS-dT" = "#a32fba",
+  "SS3\nHagemann-J." = "#dcbeff",
+  "TSO-AAGCA\nSTRT-dT" = '#9A6324',
+  "TSO-CATCA\nSTRT-dT" ='#bfef45',
+  "TSO-CTGAC\nSTRT-dT" = '#800000',
+  "TSO-ATGAC\nSTRT-dT" ='#000075',
+  "TSO-CTAAC\nSTRT-dT" = '#808000',
+  "LA-TSO-CAGCA\nSTRT-dT" = "#dcbeff")
+
+
+relationShipInternalUMI <- function(condition = group1, suffix = "group1", facets.row = 5, width = 12, h = 12){
+
+  # 0. Read the preprocessed data
+  df.umi.tmp <- read.table("/home/vincent.hahaut/data_storage/FS_intermediate_file/UMI.txt", sep = "\t", header = TRUE) %>%    
+    mutate(CONDITION = case_when(
+    grepl("5_SS3|6_SS3", ID) ~ "SS3",
+    grepl("SS3fwd", ID) ~ "SS3\nHagemann-J. et al",
+    grepl("SS3-CGTAC", ID) ~ "SS3-CGTAC\nFS-dT",
+    grepl("311_CTAAC", ID) ~ "TSO-CTAAC\nFS-dT",
+    grepl("STRToligoT_Spacer2", ID) ~ "TSO-ATAAC\nSTRT-dT",
+    grepl("STRToligoT_Spacer1", ID) ~ "TSO-CAGCA\nSTRT-dT",
+    grepl("STRToligoT_Fstso", ID) ~ "TSO-FS-UMI\nSTRT-dT",
+    grepl("AAGCA", ID) ~ "TSO-AAGCA\nSTRT-dT",
+    grepl("CATCA", ID) ~ "TSO-CATCA\nSTRT-dT",
+    grepl("CTGAC", ID) ~ "TSO-CTGAC\nSTRT-dT",
+    grepl("ATGAC", ID) ~ "TSO-ATGAC\nSTRT-dT",
+    grepl("CTAAC", ID) ~ "TSO-CTAAC\nSTRT-dT",
+    grepl("FSoligoT_Spacer2", ID) ~ "TSO-ATAAC\nFS-dT",
+    grepl("FSoligoT_Spacer1", ID) ~ "TSO-CAGCA\nFS-dT",
+    grepl("FSoligoT_FStso", ID) ~ "TSO-FS-UMI\nFS-dT",
+    grepl("SS3oligoT_Spacer1", ID) ~ "TSO-CAGCA\nSS3-dT",
+    grepl("276_LA", ID) ~ "LA-TSO-CAGCA\nSTRT-dT",
+    grepl("SS3oligoT_Fstso", ID) ~ "TSO-FS-UMI\nSS3-dT")) %>%
+    filter(CONDITION %in% condition) 
+
+  df.all.tmp <- read.table("/home/vincent.hahaut/data_storage/FS_intermediate_file/ALL.txt", sep = "\t", header = TRUE) %>%    
+    mutate(CONDITION = case_when(
+    grepl("5_SS3|6_SS3", ID) ~ "SS3",
+    grepl("SS3fwd", ID) ~ "SS3\nHagemann-J. et al",
+    grepl("STRToligoT_Spacer2", ID) ~ "TSO-ATAAC\nSTRT-dT",
+    grepl("STRToligoT_Spacer1", ID) ~ "TSO-CAGCA\nSTRT-dT",
+    grepl("SS3-CGTAC", ID) ~ "SS3-CGTAC\nFS-dT",
+    grepl("311_CTAAC", ID) ~ "TSO-CTAAC\nFS-dT",
+    grepl("STRToligoT_Fstso", ID) ~ "TSO-FS-UMI\nSTRT-dT",
+    grepl("AAGCA", ID) ~ "TSO-AAGCA\nSTRT-dT",
+    grepl("CATCA", ID) ~ "TSO-CATCA\nSTRT-dT",
+    grepl("CTGAC", ID) ~ "TSO-CTGAC\nSTRT-dT",
+    grepl("ATGAC", ID) ~ "TSO-ATGAC\nSTRT-dT",
+    grepl("CTAAC", ID) ~ "TSO-CTAAC\nSTRT-dT",
+    grepl("FSoligoT_Spacer2", ID) ~ "TSO-ATAAC\nFS-dT",
+    grepl("FSoligoT_Spacer1", ID) ~ "TSO-CAGCA\nFS-dT",
+    grepl("FSoligoT_FStso", ID) ~ "TSO-FS-UMI\nFS-dT",
+    grepl("SS3oligoT_Spacer1", ID) ~ "TSO-CAGCA\nSS3-dT",
+    grepl("276_LA", ID) ~ "LA-TSO-CAGCA\nSTRT-dT",
+    grepl("SS3oligoT_Fstso", ID) ~ "TSO-FS-UMI\nSS3-dT")) %>%
+    filter(CONDITION %in% condition,
+           TYPE == "INTERNAL")
+
+  # 1. Intersect the two datasets
+  df.unify <- left_join(df.all.tmp, df.umi.tmp, by = c("ID", "DOWN", "CONDITION")) %>%
+    filter(ID != "245_FS_UMI_FSoligoT_Spacer1_H2") %>%
+    filter(!is.na(count.0.exon) & !is.na(count.0.umi))
+  
+  df.unify %>%
+      filter(DOWN == 75000) %>%
+      rstatix::dunn_test(count.0.exon ~ CONDITION, p.adjust.method = "bonferroni") %>%
+      filter(group1 == "SS3\nHagemann-J. et al" | group2 == "SS3\nHagemann-J. et al") %>%
+      mutate(p.adj = p.adjust(p, "bonferroni"))
+    
+  df.unify %>%
+      filter(DOWN == 75000) %>%
+      rstatix::dunn_test(count.0.umi ~ CONDITION, p.adjust.method = "bonferroni") %>%
+      filter(group1 == "SS3\nHagemann-J. et al" | group2 == "SS3\nHagemann-J. et al") %>%
+      mutate(p.adj = p.adjust(p, "bonferroni"))
+
+  # corrs <- data.frame()
+  # for(i in unique(df.unify$CONDITION)){
+  #   data.tmp <- filter(df.unify, CONDITION == i)
+  #   corrs <- bind_rows(corrs, 
+  #                      data.frame(
+  #                        CONDITION = i,
+  #                        tau = broom::tidy(cor.test(data.tmp$count.0.exon, data.tmp$count.0.umi, method = "kendall"))$estimate,
+  #                        pval = broom::tidy(cor.test(data.tmp$count.0.exon, data.tmp$count.0.umi, method = "kendall"))$p.value))
+  # }
+  
+  # 2. Order the groups
+  if(suffix == "group1"){
+    lvl <- c("SS3", "SS3\nHagemann-J. et al","TSO-CAGCA\nSTRT-dT" , "TSO-AAGCA\nSTRT-dT" , "TSO-CATCA\nSTRT-dT" , "TSO-CTGAC\nSTRT-dT", "TSO-ATGAC\nSTRT-dT"  ,"TSO-CTAAC\nSTRT-dT", "TSO-ATAAC\nSTRT-dT",  "TSO-FS-UMI\nSTRT-dT")
+  } else if(suffix == "group2"){
+    lvl <- c("SS3", "TSO-ATAAC\nFS-dT","TSO-CAGCA\nFS-dT","TSO-FS-UMI\nFS-dT","TSO-CAGCA\nSS3-dT","TSO-FS-UMI\nSS3-dT")
+  } else if(suffix == "group3"){
+    lvl <- c("TSO-CAGCA\nSTRT-dT","LA-TSO-CAGCA\nSTRT-dT")
+  } else if(suffix == "group4"){
+    lvl <- c("SS3", "SS3\nHagemann-J. et al",  "TSO-CATCA\nSTRT-dT","TSO-CTAAC\nSTRT-dT", "TSO-CAGCA\nSTRT-dT","TSO-ATAAC\nSTRT-dT","TSO-FS-UMI\nSTRT-dT", "TSO-FS-UMI\nSS3-dT")
+  } else if(suffix == "group5"){
+    lvl <- c("TSO-AAGCA\nSTRT-dT","TSO-CTGAC\nSTRT-dT","TSO-ATGAC\nSTRT-dT","TSO-ATAAC\nFS-dT","TSO-CAGCA\nFS-dT","TSO-CAGCA\nSS3-dT","TSO-FS-UMI\nFS-dT")
+  }
+  
+  df.unify <- mutate(df.unify, CONDITION = factor(CONDITION, levels = lvl))
+
+  # 3. Mean UMI / internal genes detected in SS3 Hagemann
+  #x.umi <- mean(na.omit(filter(df.unify, DOWN == 75000, CONDITION == "SS3\nHagemann-J.")$count.0.umi))
+  #y.gene <- mean(na.omit(filter(df.unify, DOWN == 75000, CONDITION == "SS3\nHagemann-J.")$count.0.exon))
+  x.umi <- 6307.914
+  y.gene <- 7028.888
+
+  # 4. Create a matrix of condition vs x.umi / y.umi to plot the mean UMI / internal genes
+  # FS no UMI mean gene at 75K is >1 =5112 />0 = 7525
+  coordinatesMeanSS3 <- data_frame(x.umi = x.umi, y.gene = y.gene, CONDITION = unique(df.unify$CONDITION))
+  coordinatesMeanFS <- data_frame(x.umi = Inf, y.gene = 7525, CONDITION = unique(df.unify$CONDITION))
+  
+  # 5. Visualize
+  p.internal.umi <- ggplot() + 
+  geom_segment(data = coordinatesMeanFS, aes(x = -Inf, xend = Inf, y = y.gene, yend = y.gene,  
+                                             linetype = "FS No-UMI\nMean Detected Genes\n75000 reads"), 
+               color = "#0F90E9", size = 1.25, alpha = 0.75) +
+  geom_segment(data = coordinatesMeanSS3, aes(x = -Inf, xend = x.umi, y = y.gene, yend = y.gene, 
+                                              linetype = "SS3\nMean Detected Genes\n75000 reads"), 
+               color = "#7570B3",size = 1.5, alpha = 0.75) +
+  geom_segment(data = coordinatesMeanSS3, aes(x = x.umi, xend = x.umi, y = -Inf, yend = y.gene, 
+                                              linetype = "SS3\nMean Detected Genes\n75000 reads"),
+               color = "#E7298A" , size = 1.5, alpha = 0.75) +
+  scale_linetype_manual(values=c("SS3\nMean Detected Genes\n75000 reads"=2, "FS No-UMI\nMean Detected Genes\n75000 reads"=2.5)) +
+  geom_point(data = filter(df.unify, DOWN <= 125000), aes(count.0.exon, x = count.0.umi, color = as.factor(DOWN)), size = 2.5, alpha = 0.75) +
+  facet_wrap("CONDITION", nrow = facets.row) +
+  theme_bw(base_size = 28) +
+  scale_color_manual(values = c(
+      "10000" = "#1B9E77", 
+      "25000" = "#D95F02",
+      "50000" = "#7570B3",
+      "75000" = "#E7298A",
+      "100000" = "#66A61E",
+      "125000" = "#E6AB02",
+      "FS No-UMI\nMean Detected Genes\n75000 reads" = "#E41A1C",
+      "SS3\nMean Detected Genes\n75000 reads" = "#4DAF4A")) +
+  scale_color_brewer(palette = "Dark2") +
+  xlab("Detected Genes - UMI") +
+  ylab("Detected Genes - INTERNAL") +
+  theme(legend.title = element_text(size = 24, face ="bold"),
+        strip.text = element_text(size = 24, face ="bold"),
+        axis.text = element_text(size = 18),
+        panel.grid.minor = element_blank(),
+        legend.position = "bottom") +
+  scale_fill_manual(values = colorspace::darken(mycols, 0.1)) +
+  scale_y_continuous(breaks = seq(0,9999, 1000), labels = paste0(0:9, "K"), limits = c(1500,9750)) +
+  scale_x_continuous(breaks = seq(0,8750, 1000), labels = paste0(0:8, "K"), limits = c(1000,8750)) +
+  labs(linetype = "",
+       col = "Downsampled\nUMI or Internal Reads") +
+  guides(colour = guide_legend(override.aes = list(size=3), ncol = 1),
+         linetype = guide_legend(ncol = 1))
+  
+  # 5. Save it
+  ggsave(p.internal.umi, dpi = 300, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/UMI.internalvsUMI.", suffix, ".tiff"), bg = "white", width = width, height = h)
+
+}
+
+relationShipInternalUMI(group1, suffix = "group1", width = 24, h = 12, facets.row = 2)
+relationShipInternalUMI(group2, suffix = "group2", width = 20, h = 4+2*length(group2), facets.row = 2)
+relationShipInternalUMI(group3, suffix = "group3")
+
+group4 <- c("SS3", "SS3\nHagemann-J. et al", "TSO-FS-UMI\nSTRT-dT", "TSO-FS-UMI\nSS3-dT",
+"TSO-CATCA\nSTRT-dT","TSO-CTAAC\nSTRT-dT", "TSO-CAGCA\nSTRT-dT","TSO-ATAAC\nSTRT-dT")
+group5 <- c("TSO-AAGCA\nSTRT-dT","TSO-CTGAC\nSTRT-dT","TSO-ATGAC\nSTRT-dT","TSO-ATAAC\nFS-dT","TSO-CAGCA\nFS-dT","TSO-FS-UMI\nFS-dT","TSO-CAGCA\nSS3-dT")
+
+relationShipInternalUMI(group4, suffix = "group4", width = 12, h = 24, facets.row = 4)
+relationShipInternalUMI(group5, suffix = "group5", width = 20, h = 12, facets.row = 2)
+
+
+
+```
+
+```{r Detected Genes - downsamplings , echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
+
+# 1. Read number of detected genes per sample
+df.umi <- read_tsv("/home/vincent.hahaut/data_storage/FS_intermediate_file/UMI.txt") %>% dplyr::select(-MOLECULES)
+df.all <- read_tsv("/home/vincent.hahaut/data_storage/FS_intermediate_file/ALL.txt") 
+colnames(df.umi) <- colnames(df.all)
+
+# 2. Aggregate counts
+df.counts <- bind_rows(df.umi, df.all) %>%
+  mutate(GROUP = case_when(
+    grepl("5_SS3|6_SS3", ID) ~ "SS3",
+    grepl("SS3fwd", ID) ~ "SS3\ndata from\nHagemann-J. et al",
+    grepl("STRToligoT_Spacer2", ID) ~ "TSO-ATAAC\nSTRT-dT",
+    grepl("STRToligoT_Spacer1", ID) ~ "TSO-CAGCA\nSTRT-dT",
+    grepl("SS3-CGTAC", ID) ~ "SS3-CGTAC\nFS-dT",
+    grepl("311_CTAAC", ID) ~ "TSO-CTAAC\nFS-dT",
+    grepl("STRToligoT_Fstso", ID) ~ "TSO-FS-UMI\nSTRT-dT",
+    grepl("AAGCA", ID) ~ "TSO-AAGCA\nSTRT-dT",
+    grepl("CATCA", ID) ~ "TSO-CATCA\nSTRT-dT",
+    grepl("CTGAC", ID) ~ "TSO-CTGAC\nSTRT-dT",
+    grepl("ATGAC", ID) ~ "TSO-ATGAC\nSTRT-dT",
+    grepl("CTAAC", ID) ~ "TSO-CTAAC\nSTRT-dT",
+    grepl("FSoligoT_Spacer2", ID) ~ "TSO-ATAAC\nFS-dT",
+    grepl("FSoligoT_Spacer1", ID) ~ "TSO-CAGCA\nFS-dT",
+    grepl("FSoligoT_FStso", ID) ~ "TSO-FS-UMI\nFS-dT",
+    grepl("SS3oligoT_Spacer1", ID) ~ "TSO-CAGCA\nSS3-dT",
+    grepl("276_LA", ID) ~ "LA-TSO-CAGCA\nSTRT-dT",
+    grepl("SS3oligoT_Fstso", ID) ~ "TSO-FS-UMI\nSS3-dT"))  %>%
+  filter(GROUP %in% c("SS3\ndata from\nHagemann-J. et al","TSO-CATCA\nSTRT-dT","TSO-CTAAC\nSTRT-dT","TSO-CAGCA\nSTRT-dT")) 
+
+# 3. Summarise to mean / sd
+df.counts <- df.counts %>%  group_by(GROUP, TYPE, DOWN) %>% 
+  summarise(m = mean(count.0.exon),
+            s = sd(count.0.exon))
+
+# 4. Visualize results
+downsampling <- ggplot() + 
+  geom_point(data = df.counts, aes(x = as.numeric(DOWN), y = m, color = TYPE),  position = position_dodge(1000)) +
+  geom_line(data = df.counts, aes(x = as.numeric(DOWN), color = TYPE, y = m, group = TYPE), position = position_dodge(1000)) +
+  geom_errorbar(data = df.counts, aes(x = as.numeric(DOWN), color = TYPE, ymin = m-s, ymax = m+s), position = position_dodge(1000)) +
+  facet_wrap(nrow = 1, "GROUP") + 
+  theme_bw(base_size = 20) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1, size = 12)) + 
+  ylab("Detected Genes") +  
+  scale_color_brewer(palette = "Set1") + 
+  scale_x_continuous(breaks = c(5000,10000,20000,40000,50000,75000,100000,125000,250000), 
+                     labels = c("","","","","50K","75K","100K","125K","250K")) +
+  xlab("Downsampled Reads") 
+
+# 5. Aggregate to the proportion of gene detected compared to the refrence (75K)
+# Per cell type basis
+df.counts <- bind_rows(df.umi, df.all) %>%
+  mutate(GROUP = case_when(
+    grepl("5_SS3|6_SS3", ID) ~ "SS3",
+    grepl("SS3fwd", ID) ~ "SS3\ndata from\nHagemann-J. et al",
+    grepl("STRToligoT_Spacer2", ID) ~ "TSO-ATAAC\nSTRT-dT",
+    grepl("STRToligoT_Spacer1", ID) ~ "TSO-CAGCA\nSTRT-dT",
+    grepl("SS3-CGTAC", ID) ~ "SS3-CGTAC\nFS-dT",
+    grepl("311_CTAAC", ID) ~ "TSO-CTAAC\nFS-dT",
+    grepl("STRToligoT_Fstso", ID) ~ "TSO-FS-UMI\nSTRT-dT",
+    grepl("AAGCA", ID) ~ "TSO-AAGCA\nSTRT-dT",
+    grepl("CATCA", ID) ~ "TSO-CATCA\nSTRT-dT",
+    grepl("CTGAC", ID) ~ "TSO-CTGAC\nSTRT-dT",
+    grepl("ATGAC", ID) ~ "TSO-ATGAC\nSTRT-dT",
+    grepl("CTAAC", ID) ~ "TSO-CTAAC\nSTRT-dT",
+    grepl("FSoligoT_Spacer2", ID) ~ "TSO-ATAAC\nFS-dT",
+    grepl("FSoligoT_Spacer1", ID) ~ "TSO-CAGCA\nFS-dT",
+    grepl("FSoligoT_FStso", ID) ~ "TSO-FS-UMI\nFS-dT",
+    grepl("SS3oligoT_Spacer1", ID) ~ "TSO-CAGCA\nSS3-dT",
+    grepl("276_LA", ID) ~ "LA-TSO-CAGCA\nSTRT-dT",
+    grepl("SS3oligoT_Fstso", ID) ~ "TSO-FS-UMI\nSS3-dT"))  %>%
+  filter(GROUP %in% c("SS3\ndata from\nHagemann-J. et al","TSO-CATCA\nSTRT-dT","TSO-CTAAC\nSTRT-dT","TSO-CAGCA\nSTRT-dT")) %>%
+  group_by(ID, TYPE) %>% 
+  mutate(test = any(DOWN == 75000)) %>%
+  ungroup() %>%
+  filter(test == TRUE) %>% 
+  group_by(ID, TYPE) %>% 
+  mutate(REF = count.0.exon[DOWN == 75000]) %>%
+  filter(!is.na(REF)) %>%
+  ungroup() %>%
+  mutate(ratio = count.0.exon / REF) %>%
+  group_by(GROUP, TYPE, DOWN) %>%
+  summarise(m = mean(ratio),
+            s = sd(ratio))
+
+# 6. Visualize
+downsampling2 <- ggplot(df.counts, aes(x = as.numeric(DOWN), color = TYPE)) + 
+  facet_wrap(nrow = 1, "GROUP") + 
+  theme_bw(base_size = 16) +
+  geom_hline(color = "darkred", linetype="dashed", yintercept = 1) +
+  geom_point(aes(y = m), position = position_dodge(1000)) +
+  geom_line(aes(y = m, group = TYPE), position = position_dodge(1000)) +
+  geom_errorbar(aes(ymin = m-s, ymax = m+s), position = position_dodge(1000)) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1, size = 12)) + 
+  ylab("Proportion of\nDetected Reads") +  
+  scale_color_brewer(palette = "Set1") + 
+  scale_y_continuous(breaks = seq(0,1.5,.25)) +
+  scale_x_continuous(breaks = c(5000,10000,20000,40000,50000,75000,100000,125000,250000), 
+                     labels = c("","","","","50K","75K","100K","125K","250K")) +
+  xlab("Downsampled Reads")
+
+# 7. Save results
+ggsave(
+  plot_grid(downsampling, downsampling2, nrow = 2, vjust = 1), bg = "white",
+  filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_downsampling_UMI_internal.tiff",
+  dpi = 200, height = 8, width = 12)
+```
+
+```{r Overlap, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
+
+# GOAL: Explore the overlaps between UMI / Internal reads in different conditions
+if(file.exists("/home/vincent.hahaut/data_storage/FS_intermediate_file/HEK_INTERNAL.ssce.down.rds")){
+  
+  # 1. Read count files - get matrix of counts
+  ids <- list.files("/home/vincent.hahaut/data_storage/210322_NB551561_0044_AHNTL2AFX2/STAR/")
+
+  # UMI
+  mypaths <- sapply(ids, function(x) paste0("/home/vincent.hahaut/data_storage/210322_NB551561_0044_AHNTL2AFX2/STAR/", x, "/DOWNSAMPLE/DOWN_75000/FEATURECOUNTS/umi.counts.75000.tsv.gz"))
+  path.tmp <- mypaths[file.exists(mypaths)]
+  mycounts.umi <- getUMICounts(path.tmp, names(path.tmp))
+  write_rds(mycounts.umi, "/home/vincent.hahaut/data_storage/FS_intermediate_file/HEK_UMI.ssce.down.rds")
+  
+  # Internal
+  mypaths <- sapply(ids, function(x) paste0("/home/vincent.hahaut/data_storage/210322_NB551561_0044_AHNTL2AFX2/STAR/", x, "/DOWNSAMPLE/DOWN_75000/FEATURECOUNTS/", x, "_INTERNAL_75000.feature.EXON.txt"))
+  path.tmp <- mypaths[file.exists(mypaths)]
+  mycounts <- getFeatureCount(path.tmp, names(path.tmp), mode = "")
+  write_rds(mycounts, "/home/vincent.hahaut/data_storage/FS_intermediate_file/HEK_INTERNAL.ssce.down.rds")
+
+  # Internal + UMI
+  mypaths <- sapply(ids, function(x) paste0("/home/vincent.hahaut/data_storage/210322_NB551561_0044_AHNTL2AFX2/STAR/", x, "/DOWNSAMPLE/DOWN_75000/FEATURECOUNTS/", x, "_ALL_75000.feature.EXON.txt"))
+  path.tmp <- mypaths[file.exists(mypaths)]
+  mycounts <- getFeatureCount(path.tmp, names(path.tmp), mode = "")
+  write_rds(mycounts, "/home/vincent.hahaut/data_storage/FS_intermediate_file/HEK_ALL.ssce.down.rds")
+
+} else {
+  
+  umi <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/HEK_UMI.ssce.down.rds")
+  internal <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/HEK_INTERNAL.ssce.down.rds")
+  all.reads <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/HEK_ALL.ssce.down.rds")
+
+}
+
+# 2. Load GTF info files
+# Gene GC contents and length
+# gene types
+gtf <- as.data.frame(rtracklayer::import("/home/vincent.hahaut/data_storage/REFERENCES/hsap_fastsmart/REFERENCE/GTF/gencode.v34.primary_assembly.annotation.gtf"))
+gc.perc <- read.table(file="/home/vincent.hahaut/data_storage/REFERENCES/hsap_fastsmart/REFERENCE/GTF/gencode.v34.exon.GC_lengths.tsv", header = T, sep="\t") %>%
+  left_join(
+    dplyr::select(gtf, gene_name, gene_type) %>% 
+      distinct() %>%
+      group_by(gene_name) %>%
+      # <10 genes have two gene types 
+      mutate(n = n()) %>%
+      ungroup() %>%
+      filter(n == 1) %>% 
+      dplyr::select(gene_name, gene_type), by = "gene_name")
+row.names(gc.perc) <- gc.perc$gene_name
+
+# 3. Add the gene info to the single-cell object rowData
+gene_index <- left_join(data_frame(gene_name = row.names(umi)), gc.perc, by = "gene_name") %>% as.data.frame
+row.names(gene_index) <- gene_index$gene_name
+rowData(umi) <- gene_index
+
+gene_index <- left_join(data_frame(gene_name = row.names(internal)), gc.perc, by = "gene_name") %>% as.data.frame
+row.names(gene_index) <- gene_index$gene_name
+rowData(internal) <- gene_index
+
+gene_index <- left_join(data_frame(gene_name = row.names(all.reads)), gc.perc, by = "gene_name") %>% as.data.frame
+row.names(gene_index) <- gene_index$gene_name
+rowData(all.reads) <- gene_index
+
+# 4. Get Cells present in both dataset 
+ID.umi <- colnames(umi)
+ID.internal <- colnames(internal)
+
+common.space <- intersect(ID.umi, ID.internal)
+
+# 5. For each cell
+overlap <- data_frame()
+for(i in common.space){
+  
+  # 5.1. Select that cell
+  cell.umi <- umi[,colnames(umi) == i]
+  cell.internal <- internal[,colnames(internal) == i]
+  cell.all <- all.reads[,colnames(all.reads) == i]
+
+  # 5.2. Get the expressed genes
+  gene.umi <- rowData(cell.umi[as.vector(counts(cell.umi) > 1),])
+  gene.internal <- rowData(cell.internal[as.vector(counts(cell.internal) > 1),])
+  gene.all <- rowData(cell.all[as.vector(counts(cell.all) > 1),])
+
+  # 5.3. Get genes overlapping between conditions 
+  common.genes <- intersect(gene.internal$gene_name, gene.umi$gene_name)
+  
+  index.internal <- which(!gene.internal$gene_name %in% common.genes)
+  index.umi <- which(!gene.umi$gene_name %in% common.genes)
+  index.common <- which(gene.internal$gene_name %in% common.genes)
+  
+  gene.internal.specific <- gene.internal[index.internal,]
+  gene.umi.specific <- gene.umi[index.umi,]
+  inCommon <- gene.internal[index.common,]
+
+  # 5.4. Summarise the overap infos
+  overlap <- bind_rows(overlap,
+                       data_frame(
+                        ID = i,
+                        ID_unique = str_replace(i, "_[^_]+?$", ""),
+                        DEPTH = 75000,
+                        ALL.nGenes = nrow(gene.all),
+                        Internal.nGenes = nrow(gene.internal.specific),
+                        UMI.nGenes = nrow(gene.umi.specific),
+                        overlap.nGenes = nrow(inCommon),
+                        #
+                        Internal.length = mean(gene.internal.specific$Length),
+                        UMI.length = mean(gene.umi.specific$Length),
+                        overlap.length = mean(inCommon$Length),
+                        all.length = mean(gene.all$Length),
+                        #
+                        Internal.GC = mean(gene.internal.specific$GC),
+                        UMI.GC = mean(gene.umi.specific$GC),
+                        overlap.GC = mean(inCommon$GC),
+                        all.GC = mean(gene.all$GC),
+                        #
+                        Internal.proteinCoding = sum(gene.internal.specific$gene_type == "protein_coding", na.rm = T),
+                        UMI.proteinCoding = sum(gene.umi.specific$gene_type == "protein_coding", na.rm = T),
+                        overlap.proteinCoding = sum(inCommon$gene_type == "protein_coding", na.rm = T),
+                        all.proteinCoding = sum(gene.all$gene_type == "protein_coding", na.rm = T),
+                        #
+                        Internal.lncRNA = sum(gene.internal.specific$gene_type == "lncRNA", na.rm = T),
+                        UMI.lncRNA = sum(gene.umi.specific$gene_type == "lncRNA", na.rm = T),
+                        overlap.lncRNA = sum(inCommon$gene_type == "lncRNA", na.rm = T),
+                        all.lncRNA = sum(gene.all$gene_type == "lncRNA", na.rm = T),
+                        #
+                        Internal.propseudo = sum(gene.internal.specific$gene_type == "processed_pseudogene", na.rm = T),
+                        UMI.propseudo = sum(gene.umi.specific$gene_type == "processed_pseudogene", na.rm = T),
+                        overlap.propseudo = sum(inCommon$gene_type == "processed_pseudogene", na.rm = T),
+                        all.propseudo = sum(gene.all$gene_type == "processed_pseudogene", na.rm = T),
+                        #
+                        Internal.transpseudo = sum(gene.internal.specific$gene_type == "transcribed_processed_pseudogene", na.rm = T),
+                        UMI.transpseudo = sum(gene.umi.specific$gene_type == "transcribed_processed_pseudogene", na.rm = T),
+                        overlap.transpseudo = sum(inCommon$gene_type == "transcribed_processed_pseudogene", na.rm = T),
+                        all.transpseudo = sum(gene.all$gene_type == "transcribed_processed_pseudogene", na.rm = T),
+                        #
+                        Internal.transunpseudo = sum(gene.internal.specific$gene_type == "transcribed_unprocessed_pseudogene", na.rm = T),
+                        UMI.transunpseudo = sum(gene.umi.specific$gene_type == "transcribed_unprocessed_pseudogene", na.rm = T),
+                        overlap.transunpseudo = sum(inCommon$gene_type == "transcribed_unprocessed_pseudogene", na.rm = T),
+                        all.transunpseudo = sum(gene.all$gene_type == "transcribed_unprocessed_pseudogene", na.rm = T),
+                        #
+                        Internal.unpseudo = sum(gene.internal.specific$gene_type == "unprocessed_pseudogene", na.rm = T),
+                        UMI.unpseudo = sum(gene.umi.specific$gene_type == "unprocessed_pseudogene", na.rm = T),
+                        overlap.unpseudo = sum(inCommon$gene_type == "unprocessed_pseudogene", na.rm = T),
+                        all.unpseudo = sum(gene.all$gene_type == "unprocessed_pseudogene", na.rm = T)
+                      )
+  )
+}
+
+# Add GROUPS
+overlap.aggr <- overlap %>%
+  mutate(GROUP = case_when(
+    grepl("5_SS3|6_SS3", ID) ~ "SS3",
+    grepl("SS3fwd", ID) ~ "SS3\ndata from\nHagemann-J. et al",
+    grepl("STRToligoT_Spacer2", ID) ~ "TSO-ATAAC\nSTRT-dT",
+    grepl("STRToligoT_Spacer1", ID) ~ "TSO-CAGCA\nSTRT-dT",
+    grepl("SS3-CGTAC", ID) ~ "SS3-CGTAC\nFS-dT",
+    grepl("311_CTAAC", ID) ~ "TSO-CTAAC\nFS-dT",
+    grepl("STRToligoT_Fstso", ID) ~ "TSO-FS-UMI\nSTRT-dT",
+    grepl("AAGCA", ID) ~ "TSO-AAGCA\nSTRT-dT",
+    grepl("CATCA", ID) ~ "TSO-CATCA\nSTRT-dT",
+    grepl("CTGAC", ID) ~ "TSO-CTGAC\nSTRT-dT",
+    grepl("ATGAC", ID) ~ "TSO-ATGAC\nSTRT-dT",
+    grepl("CTAAC", ID) ~ "TSO-CTAAC\nSTRT-dT",
+    grepl("FSoligoT_Spacer2", ID) ~ "TSO-ATAAC\nFS-dT",
+    grepl("FSoligoT_Spacer1", ID) ~ "TSO-CAGCA\nFS-dT",
+    grepl("FSoligoT_FStso", ID) ~ "TSO-FS-UMI\nFS-dT",
+    grepl("SS3oligoT_Spacer1", ID) ~ "TSO-CAGCA\nSS3-dT",
+    grepl("276_LA", ID) ~ "LA-TSO-CAGCA\nSTRT-dT",
+    grepl("SS3oligoT_Fstso", ID) ~ "TSO-FS-UMI\nSS3-dT")) %>%
+  filter(GROUP %in% c("SS3\ndata from\nHagemann-J. et al","TSO-CATCA\nSTRT-dT","TSO-CTAAC\nSTRT-dT","TSO-CAGCA\nSTRT-dT"))
+
+# 1. Number of Genes per read type
+overlap.aggr.tmp <- overlap.aggr %>%
+  select(GROUP, Internal.nGenes, UMI.nGenes, overlap.nGenes, ALL.nGenes) %>%
+  pivot_longer(-GROUP) %>%
+  mutate(name = case_when(name == "Internal.nGenes" ~ "Internal Specific Genes",
+                          name == "UMI.nGenes" ~ "UMI Specific Genes",
+                          name == "ALL.nGenes" ~ "UMI+Internal Genes",
+                          name == "overlap.nGenes" ~ "Overlaping Genes")) %>%
+  mutate(name = factor(name, levels = c("UMI Specific Genes","Internal Specific Genes","Overlaping Genes","UMI+Internal Genes")))
+
+# Wilcoxon
+p.signif <- ggpubr::compare_means(data = filter(overlap.aggr.tmp, name %in% c("UMI Specific Genes", "Internal Specific Genes")), value ~ name, group.by = "GROUP", p.adjust.method = "bonferroni") %>%
+  mutate(p.signif = ifelse(p.signif == "****", "***", p.signif),
+         x = as.vector(sapply(0:3, function(x) c(0.675)+x)), 
+         xend = as.vector(sapply(0:3, function(x) c(c(0.9))+x)),
+         y = rep(c(3200), length(unique(GROUP)))) %>%
+  filter(p.signif != "ns") 
+
+# Dunn's test
+p.signif2 <- overlap.aggr.tmp %>%
+  group_by(name) %>%
+  rstatix::dunn_test(value ~ GROUP) %>%
+  filter(group1 == "SS3\ndata from\nHagemann-J. et al") %>%
+  mutate(p.adj = p.adjust(p, "bonferroni"),
+         p.signif = case_when(p.adj < 0.05 & p.adj > 0.005 ~ "*",
+                      p.adj < 0.005 & p.adj > 0.0005 ~ "**",
+                      p.adj < 0.0005 ~ "***",
+                      TRUE ~ "ns"),
+         x = case_when(name == "UMI Specific Genes" ~ 0.65,
+                       name == "Internal Specific Genes" ~ 0.9,
+                       name == "Overlaping Genes" ~ 1.1,
+                       name == "UMI+Internal Genes" ~ 1.35)) %>%
+  ungroup() %>%
+  filter(p.signif != "ns") %>%
+  mutate(y = seq(6000,6000+((nrow(.)-1)*200),200), 
+         xend = x + match(group2, levels(factor(overlap.aggr.tmp$GROUP)))-1) 
+
+# Visualize
+p.numberGenes <- ggplot() + 
+  geom_hline(yintercept = seq(0,6000,1000), linetype = "dashed", color = "darkgrey") +
+  geom_boxplot(data = overlap.aggr.tmp, aes(x = GROUP, y = value, fill = name)) + 
+  theme_cowplot() +
+  scale_fill_brewer(palette = "Set1") +
+  xlab("") + ylab("Detected Genes") + 
+  theme(legend.title = element_blank(), legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_segment(data = p.signif, aes(x = x, xend = xend, y = y, yend = y), color = "darkred") +
+  geom_text(data = p.signif, aes(x = (x+xend)/2, y = y, label = p.signif), size = 7, color = "darkred") + 
+  geom_segment(data = p.signif2, aes(x = x, xend = xend, y = y, yend = y)) +
+  geom_text(data = p.signif2, aes(x = (x+xend)/2, y = y, label = p.signif), size = 6) 
+
+# 2. Length Gene
+overlap.aggr.tmp <- overlap.aggr %>%
+  select(GROUP, Internal.length, UMI.length, overlap.length, all.length) %>%
+  pivot_longer(-GROUP) %>%
+  filter(value < 25000) %>%
+  mutate(name = case_when(name == "Internal.length" ~ "Internal Specific Length",
+                          name == "UMI.length" ~ "UMI Specific Length",
+                          name == "all.length" ~ "UMI+Internal Length",
+                          name == "overlap.length" ~ "Overlaping Length")) %>%
+  mutate(name = factor(name, levels = c("UMI Specific Length","Internal Specific Length","Overlaping Length","UMI+Internal Length")))
+
+# Wilcoxon
+p.signif <- ggpubr::compare_means(data = filter(overlap.aggr.tmp, name %in% c("UMI Specific Length", "Internal Specific Length")), value ~ name, group.by = "GROUP", p.adjust.method = "bonferroni") %>%
+  mutate(p.signif = ifelse(p.signif == "****", "***", p.signif),
+         x = as.vector(sapply(0:3, function(x) c(0.65)+x)), 
+         xend = as.vector(sapply(0:3, function(x) c(c(0.9))+x)),
+         y = rep(c(7250), length(unique(GROUP)))) %>%
+  filter(p.signif != "ns") 
+
+# Dunn's test
+p.signif2 <- overlap.aggr.tmp %>%
+  group_by(name) %>%
+  rstatix::dunn_test(value ~ GROUP) %>%
+  filter(group1 == "SS3\ndata from\nHagemann-J. et al") %>%
+  mutate(p.adj = p.adjust(p, "bonferroni"),
+         p.signif = case_when(p.adj < 0.05 & p.adj > 0.005 ~ "*",
+                      p.adj < 0.005 & p.adj > 0.0005 ~ "**",
+                      p.adj < 0.0005 ~ "***",
+                      TRUE ~ "ns"),
+         x = case_when(name == "UMI Specific Length" ~ 0.65,
+                       name == "Internal Specific Length" ~ 0.9,
+                       name == "Overlaping Length" ~ 1.1,
+                       name == "UMI+Internal Length" ~ 1.35)) %>%
+  ungroup() %>%
+  filter(p.signif != "ns") %>%
+  mutate(y = seq(7500,7500+((nrow(.)-1)*200),200), 
+         xend = x + match(group2, levels(factor(overlap.aggr.tmp$GROUP)))-1) 
+
+# Visualize
+p.numberLength <- ggplot() + 
+  geom_hline(yintercept = seq(4750,7500,1000), linetype = "dashed", color = "darkgrey") +
+  geom_boxplot(data = overlap.aggr.tmp, aes(x = GROUP, y = value, fill = name)) + 
+  theme_cowplot() +
+  scale_fill_brewer(palette = "Set1") +
+  xlab("") + ylab("Gene Length (bp)") + 
+  theme(legend.title = element_blank(), legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_segment(data = p.signif, aes(x = x, xend = xend, y = y, yend = y)) +
+  geom_segment(data = p.signif, aes(x = x, xend = xend, y = y, yend = y), color = "darkred") +
+  geom_text(data = p.signif, aes(x = (x+xend)/2, y = y, label = p.signif), size = 7, color = "darkred") + 
+  geom_segment(data = p.signif2, aes(x = x, xend = xend, y = y, yend = y)) +
+  geom_text(data = p.signif2, aes(x = (x+xend)/2, y = y, label = p.signif), size = 6) 
+
+# 3. GC Content
+overlap.aggr.tmp <- overlap.aggr %>%
+  select(GROUP, Internal.GC, UMI.GC, overlap.GC, all.GC) %>%
+  pivot_longer(-GROUP) %>%
+  filter(value < 25000) %>%
+  mutate(name = case_when(name == "Internal.GC" ~ "Internal Specific GC",
+                          name == "UMI.GC" ~ "UMI Specific GC",
+                          name == "all.GC" ~ "UMI+Internal GC",
+                          name == "overlap.GC" ~ "Overlaping GC")) %>%
+  mutate(name = factor(name, levels = c("UMI Specific GC","Internal Specific GC","Overlaping GC","UMI+Internal GC")))
+
+p.signif <- ggpubr::compare_means(data = filter(overlap.aggr.tmp, name %in% c("UMI Specific GC", "Internal Specific GC")), value ~ name, group.by = "GROUP", p.adjust.method = "bonferroni") %>%
+  mutate(p.signif = ifelse(p.signif == "****", "***", p.signif),
+         x = as.vector(sapply(0:3, function(x) c(0.65)+x)), 
+         xend = as.vector(sapply(0:3, function(x) c(c(0.9))+x)),
+         y = rep(c(52), length(unique(GROUP)))) %>%
+  filter(p.signif != "ns") 
+
+p.signif2 <- overlap.aggr.tmp %>%
+  group_by(name) %>%
+  rstatix::dunn_test(value ~ GROUP) %>%
+  filter(group1 == "SS3\ndata from\nHagemann-J. et al") %>%
+  mutate(p.adj = p.adjust(p, "bonferroni"),
+         p.signif = case_when(p.adj < 0.05 & p.adj > 0.005 ~ "*",
+                      p.adj < 0.005 & p.adj > 0.0005 ~ "**",
+                      p.adj < 0.0005 ~ "***",
+                      TRUE ~ "ns"),
+         x = case_when(name == "UMI Specific GC" ~ 0.65,
+                       name == "Internal Specific GC" ~ 0.9,
+                       name == "Overlaping GC" ~ 1.1,
+                       name == "UMI+Internal GC" ~ 1.35)) %>%
+  ungroup() %>%
+  filter(p.signif != "ns") %>%
+  mutate(y = seq(53,53+((nrow(.)-1)*0.5),0.5), 
+         xend = x + match(group2, levels(factor(overlap.aggr.tmp$GROUP)))-1) 
+
+
+p.GCperc <- ggplot() + 
+  geom_hline(yintercept = seq(45,52,1), linetype = "dashed", color = "darkgrey") +
+  geom_boxplot(data = overlap.aggr.tmp, aes(x = GROUP, y = 100*value, fill = name)) + 
+  theme_cowplot() +
+  scale_fill_brewer(palette = "Set1") +
+  xlab("") + ylab("GC (%)") + 
+  scale_y_continuous(breaks = seq(45,52,1)) +
+  theme(legend.title = element_blank(), legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_segment(data = p.signif, aes(x = x, xend = xend, y = y, yend = y), color = "darkred") +
+  geom_text(data = p.signif, aes(x = (x+xend)/2, y = y, label = p.signif), size = 7, color = "darkred") + 
+  geom_segment(data = p.signif2, aes(x = x, xend = xend, y = y, yend = y)) +
+  geom_text(data = p.signif2, aes(x = (x+xend)/2, y = y, label = p.signif), size = 6) 
+
+
+# 4. Gene Content
+overlap.aggr.tmp <- overlap.aggr %>%
+  select(ID, GROUP, Internal.nGenes, UMI.nGenes, overlap.nGenes, ALL.nGenes,
+         Internal.proteinCoding, UMI.proteinCoding, overlap.proteinCoding, all.proteinCoding, 
+         Internal.lncRNA, UMI.lncRNA, overlap.lncRNA, all.lncRNA,
+         Internal.propseudo, UMI.propseudo,  all.propseudo, overlap.propseudo, 
+         Internal.transpseudo, all.transpseudo, UMI.transpseudo, overlap.transpseudo,
+         Internal.transunpseudo, UMI.transunpseudo, overlap.transunpseudo, all.transunpseudo) %>%
+  pivot_longer(-c(GROUP, ID)) %>%
+  mutate(TYPE = case_when(grepl(name, pattern = "Internal") ~ "Internal Specific Genes",
+                          grepl(name, pattern = "UMI") ~ "UMI Specific Genes",
+                          grepl(name, pattern = "overlap") ~ "Overlaping Genes",
+                           grepl(name, pattern = "all|ALL") ~ "All Genes")) %>%
+  mutate(value = ifelse(is.na(value), 0, value)) %>%
+  group_by(ID, TYPE) %>%
+  mutate(REF = unique(value[grepl("nGenes", name)]),
+         OTHER = REF - sum(value[!grepl("nGenes", name)])) %>%
+  ungroup() %>%
+  filter(!grepl("nGenes", name)) %>%
+  mutate(name = case_when(
+    grepl("lncRNA", name) ~ "lncRNA",
+    grepl("propseudo", name) ~ "Processed Pseudogene",
+    grepl("proteinCoding", name) ~ "Protein Coding Gene",
+    grepl("transpseudo", name) ~ "Transcribed Pseudogene",
+    grepl("transunpseudo", name) ~ "Transcribed Unprocessed Pseudogene",
+    grepl("unpseudo", name) ~ "Unprocessed Pseudogene")
+  ) 
+
+overlap.aggr.tmp <- bind_rows(overlap.aggr.tmp,
+                              filter(overlap.aggr.tmp, name == "Protein Coding Gene") %>% mutate(value = OTHER, name = "Other")) %>%
+  select(-OTHER) %>%
+  group_by(ID, GROUP, name, TYPE) %>%
+  summarise(perc = 100*value/REF) %>%
+  mutate(name = factor(name, levels = c("Protein Coding Gene", "lncRNA", "Other", "Processed Pseudogene", "Transcribed Unprocessed Pseudogene", "Transcribed Pseudogene")))
+
+
+p.signif <- ggpubr::compare_means(data = filter(overlap.aggr.tmp, TYPE %in% c("UMI Specific Genes", "Internal Specific Genes")), perc ~ TYPE, group.by = c("GROUP","name"), p.adjust.method = "bonferroni") %>%
+  mutate(p.signif = ifelse(p.signif == "****", "***", p.signif),
+         x = 0.65 + match(GROUP, levels(factor(overlap.aggr.tmp$GROUP)))-1, 
+         xend = 0.9 + match(GROUP, levels(factor(overlap.aggr.tmp$GROUP)))-1) %>% 
+  left_join(overlap.aggr.tmp %>% filter(TYPE == "Internal Specific Genes") %>% group_by(GROUP, name) %>% summarise(y = max(perc)),
+            by = c("GROUP", "name")) %>%
+  mutate(y = y + y*0.025) %>%
+  filter(p.signif != "ns")
+
+p.genetypes <- ggplot() + 
+  geom_boxplot(data = overlap.aggr.tmp, aes(x = GROUP, y = perc, fill = TYPE)) + 
+  facet_wrap("name", scales = "free_y", nrow = 2) +
+  theme_bw(base_size = 20) +
+  scale_fill_brewer(palette = "Set1") +
+  xlab("") + ylab("Detected Genes (%)") + 
+  theme(legend.title = element_blank(), legend.position = "none", plot.title = element_text(face = "bold"),
+        axis.text.x = element_text(angle = 45, hjust = 1, size = 12 )) +
+  geom_segment(data = p.signif, aes(x = x, xend = xend, y = y, yend = y), color = "darkred") +
+  geom_text(data = p.signif, aes(x = (x+xend)/2, y = y, label = p.signif), size = 6, color = "darkred")
+
+
+ggsave(plot_grid(plot_grid(p.numberGenes, p.numberLength, p.GCperc, nrow = 1), ncol = 1, p.genetypes, rel_heights = c(0.5,0.5)),
+       dpi = 250, height = 12, width = 24, bg = "white",
+       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_UMI_INTERNAL_READS_PROPERTIES.tiff")
+
+```
+
+```{r edit distance, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
+
+# 1. Paths to the edit distance file from umi_tools dedup
+paths <- list.files("/home/vincent.hahaut/data_storage/210322_NB551561_0044_AHNTL2AFX2/STAR/", recursive = TRUE, pattern = "dedup._edit_distance.tsv|.umi.dedup._edit_distance.tsv", full.names = TRUE)
+ids <- str_split(paths, "/", simplify = TRUE)[,8]
+
+# 2. Read  
+dedup.dist <- lapply(1:length(paths), function(x) read_tsv(paths[x]) %>% 
+                       mutate(ID = ids[x],
+                              GROUP = case_when(
+                                grepl("5_SS3|6_SS3", ID) ~ "SS3",
+                                grepl("SS3fwd", ID) ~ "SS3\nHagemann-J. et al",
+                                grepl("STRToligoT_Spacer2", ID) ~ "TSO-ATAAC\nSTRT-dT",
+                                grepl("STRToligoT_Spacer1", ID) ~ "TSO-CAGCA\nSTRT-dT",
+                                grepl("SS3-CGTAC", ID) ~ "SS3-CGTAC\nFS-dT",
+                                grepl("311_CTAAC", ID) ~ "TSO-CTAAC\nFS-dT",
+                                grepl("STRToligoT_Fstso", ID) ~ "TSO-FS-UMI\nSTRT-dT",
+                                grepl("AAGCA", ID) ~ "TSO-AAGCA\nSTRT-dT",
+                                grepl("CATCA", ID) ~ "TSO-CATCA\nSTRT-dT",
+                                grepl("CTGAC", ID) ~ "TSO-CTGAC\nSTRT-dT",
+                                grepl("ATGAC", ID) ~ "TSO-ATGAC\nSTRT-dT",
+                                grepl("CTAAC", ID) ~ "TSO-CTAAC\nSTRT-dT",
+                                grepl("FSoligoT_Spacer2", ID) ~ "TSO-ATAAC\nFS-dT",
+                                grepl("FSoligoT_Spacer1", ID) ~ "TSO-CAGCA\nFS-dT",
+                                grepl("FSoligoT_FStso", ID) ~ "TSO-FS-UMI\nFS-dT",
+                                grepl("SS3oligoT_Spacer1", ID) ~ "TSO-CAGCA\nSS3-dT",
+                                grepl("276_LA", ID) ~ "LA-TSO-CAGCA\nSTRT-dT",
+                                grepl("SS3oligoT_Fstso", ID) ~ "TSO-FS-UMI\nSS3-dT"))) 
+
+
+# 3. Aggregate results
+dedup.dist.aggr <- bind_rows(dedup.dist) %>%
+  filter(edit_distance != "Single_UMI", 
+         edit_distance < 9,
+         edit_distance > 0,
+         GROUP %in% c("SS3", "SS3\nHagemann-J. et al", "TSO-CTAAC\nSTRT-dT", "TSO-CTAAC\nFS-dT")) %>%
+  mutate(GROUP = ifelse(grepl("SS3", GROUP), "SS3", "FS-UMI")) %>%
+  group_by(ID) %>%
+  mutate(perc = 100*directional/sum(directional),
+         perc.null = 100*directional_null/sum(directional_null)) %>%
+  dplyr::select(GROUP, ID, perc, perc.null, edit_distance) %>%
+  pivot_longer(cols = c(perc, perc.null), names_to = "TYPE", values_to = "UMI") %>%
+  group_by(GROUP, TYPE, edit_distance) %>%
+  summarise(m = mean(as.numeric(UMI)),
+            sd = sd(as.numeric(UMI)))
+
+# 4. Visualize
+p.dedup <- ggplot(dedup.dist.aggr, aes(x = edit_distance, group = TYPE, color = TYPE, fill = TYPE)) + 
+  geom_ribbon(aes(ymin = m-sd, ymax = m+sd), alpha = 0.5, position = position_dodge(0.1)) +
+  geom_line(aes(y = m), position = position_dodge(0.1)) + 
+  geom_point(aes(y = m), position = position_dodge(0.1)) +
+  facet_wrap("GROUP", scales = "free_x", nrow = 2) +
+  theme_bw(base_size = 20) +
+  xlab("UMI Edit Distance") + 
+  ylab("Detected Genes (%)") + 
+  theme(legend.position = "bottom", legend.title = element_blank())
+
+ggsave(p.dedup, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_UMI_editDistanceUMI.tiff", bg = "white", dpi = 300, height = 8, width = 6)
+
+```
+
+```{r Isoforms detection, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
+
+# 1. Paths
+mypaths <- list.files("/home/vincent.hahaut/data_storage/210322_NB551561_0044_AHNTL2AFX2/STAR/", full.names = TRUE, recursive = TRUE, pattern = "quant.sf")
+mypaths <- mypaths[grepl("salmon_ALL_250000", mypaths)]
+all.ids <- str_split(mypaths, "/", simplify = T)[,8]
+
+# 2. Reads files using tximport
+salmon.all <- getSalmon(paths = mypaths, sample.ids = all.ids, gtf = gtf.path, txOUT = TRUE, scaling = "scaledTPM")
+salmon.all.gene <- getSalmon(paths = mypaths, sample.ids = all.ids, gtf = gtf.path, txOUT = FALSE)
+
+# 3. Add groups
+results <- data_frame(ID = colnames(salmon.all),
+                      counts.tpm1 = colSums(assay(salmon.all, "abundance") > 1),
+                      counts.tpm5 = colSums(assay(salmon.all, "abundance") > 5),
+                      counts.gene = colSums(assay(salmon.all.gene, "counts") > 0))
+
+# 4. Color Scale
+mycols <- c("SS3" = "#e6194B",
+  "TSO-ATAAC\nSTRT-dT"= "#3cb44b",
+  "TSO-CAGCA\nSTRT-dT"= "#ffe119",
+  "SS3\ndata from\nHagemann-J. et al" = "#dcbeff",
+  "TSO-CATCA\nSTRT-dT" ='#bfef45',
+  "TSO-CTAAC\nSTRT-dT" = '#808000')
+
+# 5. Aggregate results
+results.aggr <- results %>%
+  mutate(GROUP = case_when(
+    grepl("5_SS3|6_SS3", ID) ~ "SS3",
+    grepl("SS3fwd", ID) ~ "SS3\ndata from\nHagemann-J. et al",
+    grepl("STRToligoT_Spacer2", ID) ~ "TSO-ATAAC\nSTRT-dT",
+    grepl("STRToligoT_Spacer1", ID) ~ "TSO-CAGCA\nSTRT-dT",
+    grepl("SS3-CGTAC", ID) ~ "SS3-CGTAC\nFS-dT",
+    grepl("311_CTAAC", ID) ~ "TSO-CTAAC\nFS-dT",
+    grepl("STRToligoT_Fstso", ID) ~ "TSO-FS-UMI\nSTRT-dT",
+    grepl("AAGCA", ID) ~ "TSO-AAGCA\nSTRT-dT",
+    grepl("CATCA", ID) ~ "TSO-CATCA\nSTRT-dT",
+    grepl("CTGAC", ID) ~ "TSO-CTGAC\nSTRT-dT",
+    grepl("ATGAC", ID) ~ "TSO-ATGAC\nSTRT-dT",
+    grepl("CTAAC", ID) ~ "TSO-CTAAC\nSTRT-dT",
+    grepl("FSoligoT_Spacer2", ID) ~ "TSO-ATAAC\nFS-dT",
+    grepl("FSoligoT_Spacer1", ID) ~ "TSO-CAGCA\nFS-dT",
+    grepl("FSoligoT_FStso", ID) ~ "TSO-FS-UMI\nFS-dT",
+    grepl("SS3oligoT_Spacer1", ID) ~ "TSO-CAGCA\nSS3-dT",
+    grepl("276_LA", ID) ~ "LA-TSO-CAGCA\nSTRT-dT",
+    grepl("SS3oligoT_Fstso", ID) ~ "TSO-FS-UMI\nSS3-dT"))  %>%
+  filter(GROUP %in% c("SS3\ndata from\nHagemann-J. et al","TSO-CATCA\nSTRT-dT","TSO-CTAAC\nSTRT-dT","TSO-CAGCA\nSTRT-dT")) %>%
+  pivot_longer(-c(ID, GROUP)) %>%
+  mutate(name = case_when(name == "counts.tpm1" ~ "Isoforms\nTPM>1",
+                          name == "counts.tpm5" ~ "Isoforms\nTPM>5",
+                          name == "counts.gene" ~ "Genes\n0>Read")) %>%
+  mutate(name = factor(name, levels = c("Genes\n0>Read", "Isoforms\nTPM>5", "Isoforms\nTPM>1")))
+
+# 6. Statistical significance
+p.signif <- results.aggr %>%
+  group_by(name) %>%
+  rstatix::dunn_test(value ~ GROUP, p.adjust.method = "bonferroni") %>%
+  filter(group1 == "SS3\ndata from\nHagemann-J. et al") %>%
+  mutate(p.adj = p.adjust(p, method = "bonferroni"),
+         p.signif = case_when(p.adj < 0.05 & p.adj > 0.005 ~ "*",
+                      p.adj < 0.005 & p.adj > 0.0005 ~ "**",
+                      p.adj < 0.0005 ~ "***",
+                      TRUE ~ "ns"),
+         x = case_when(name == "Genes\n0>Read" ~ 0.7,
+                       name == "Isoforms\nTPM>5" ~ 0.975,
+                       name == "Isoforms\nTPM>1" ~ 1.3), 
+         xend = x + c(1,2,3),
+         y = seq(17250,17250+(250*nrow(.)-1), 250))
+
+# 7. Visualize results
+p.isoforms <- ggplot() + 
+  geom_hline(yintercept = seq(5000,18500,2500), linetype = "dashed", color = "darkgrey") +
+  geom_violin(data = results.aggr, aes(y = value, x = GROUP, fill = name)) + 
+  geom_boxplot(data = results.aggr, aes(y = value, x = GROUP, fill = name), width =  0.1, position = position_dodge(0.9)) +
+  scale_fill_brewer(palette = "Dark2") +
+  theme_cowplot(font_size = 20) +
+  xlab("") +
+  theme(legend.position = "none") + 
+  ylab("Detected Features") +
+  geom_segment(data = p.signif, aes(y = y, x = x, xend = xend, yend = y))  +
+  geom_text(data = p.signif, aes(y = y+25, x = (x+xend)/2, label = p.signif)) 
+
+ggsave(p.isoforms, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_UMI_isoforms.tiff", dpi = 300, height = 6, width = 12, bg = "white")
+```
+
+```{r UMI - READS %, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
+
+# GOAL: Get the % of UMI read in FASTQ
+
+if(!file.exists("/home/vincent.hahaut/data_storage/FS_intermediate_file/reads.umi.txt")){
+
+  # 0. Prerequisits
+  path <- "/home/vincent.hahaut/data_storage/210322_NB551561_0044_AHNTL2AFX2/STAR/"
+  ID <- list.files(path)
+  
+  # 1. Path to UMI / Internal / all reads FASTQ
+  path.all <- paste0("/home/vincent.hahaut/data_storage/210322_NB551561_0044_AHNTL2AFX2/STAR/", ID, "/FASTQ/allreads.R1.fq.gz")
+  path.interne <- paste0("/home/vincent.hahaut/data_storage/210322_NB551561_0044_AHNTL2AFX2/STAR/", ID, "/FASTQ/internal.R1.fq.gz")
+  path.umi <- paste0("/home/vincent.hahaut/data_storage/210322_NB551561_0044_AHNTL2AFX2/STAR/", ID, "/FASTQ/umi.R1.fq.gz")
+  
+  # 2. Read files and number of reads
+  reads.all <- lapply(1:length(path.all), function(x) if(file.exists(path.all[x])) data_frame(ALL = ShortRead::readFastq(path.all[x]) %>% length, ID = ID[x]))
+  reads.umi <- lapply(1:length(path.umi), function(x) if(file.exists(path.umi[x])) data_frame(ALL = ShortRead::readFastq(path.umi[x]) %>% length, ID = ID[x]))
+  
+  # 3. Add groups
+  reads.all <- bind_rows(reads.all) %>% mutate(TYPE = "ALL")
+  reads.umi <- bind_rows(reads.umi) %>% mutate(TYPE = "UMI")
+  
+  # 4. Save table
+  write.table(reads.all, "/home/vincent.hahaut/data_storage/FS_intermediate_file/reads.all.txt", sep = "\t", row.names = F, quote = F)
+  write.table(reads.umi, "/home/vincent.hahaut/data_storage/FS_intermediate_file/reads.umi.txt", sep = "\t", row.names = F, quote = F)
+
+}
+
+# 5. Process the number of reads (function)
+percentageUMIReads <- function(condition = group1, suffix = "group1"){
+  
+  # COLORS
+  mycols <- c("SS3" = "#e6194B",
+  "TSO-ATAAC\nSTRT-dT"= "#3cb44b",
+  "TSO-CAGCA\nSTRT-dT"= "#ffe119",
+  "TSO-FS-UMI\nSTRT-dT"= "#4363d8",
+  "TSO-ATAAC\nFS-dT"= "#f58231",
+  "TSO-CAGCA\nFS-dT"= "#42d4f4",
+  "TSO-FS-UMI\nFS-dT"= "#f032e6",
+  "TSO-CAGCA\nSS3-dT"= "#fabed4",
+  "TSO-FS-UMI\nSS3-dT"= "#469990",
+  "SS3\nHagemann-J." = "#dcbeff",
+  "TSO-AAGCA\nSTRT-dT" = '#9A6324',
+  "TSO-CATCA\nSTRT-dT" ='#bfef45',
+  "TSO-CTGAC\nSTRT-dT" = '#800000',
+  "TSO-ATGAC\nSTRT-dT" ='#000075',
+  "TSO-CTAAC\nSTRT-dT" = '#808000',
+  "LA-TSO-CAGCA\nSTRT-dT" = "#dcbeff")
+
+  # 6. Load Data
+  reads.all <- read.table("/home/vincent.hahaut/data_storage/FS_intermediate_file/reads.all.txt", sep = "\t", header = T) %>%    
+    mutate(CONDITION = case_when(
+    grepl("5_SS3|6_SS3", ID) ~ "SS3",
+    grepl("SS3fwd", ID) ~ "SS3\nHagemann-J.",
+    grepl("STRToligoT_Spacer2", ID) ~ "TSO-ATAAC\nSTRT-dT",
+    grepl("STRToligoT_Spacer1", ID) ~ "TSO-CAGCA\nSTRT-dT",
+    grepl("STRToligoT_Fstso", ID) ~ "TSO-FS-UMI\nSTRT-dT",
+    grepl("AAGCA", ID) ~ "TSO-AAGCA\nSTRT-dT",
+    grepl("CATCA", ID) ~ "TSO-CATCA\nSTRT-dT",
+    grepl("CTGAC", ID) ~ "TSO-CTGAC\nSTRT-dT",
+    grepl("ATGAC", ID) ~ "TSO-ATGAC\nSTRT-dT",
+    grepl("CTAAC", ID) ~ "TSO-CTAAC\nSTRT-dT",
+    grepl("FSoligoT_Spacer2", ID) ~ "TSO-ATAAC\nFS-dT",
+    grepl("FSoligoT_Spacer1", ID) ~ "TSO-CAGCA\nFS-dT",
+    grepl("FSoligoT_FStso", ID) ~ "TSO-FS-UMI\nFS-dT",
+    grepl("276_LA", ID) ~ "LA-TSO-CAGCA\nSTRT-dT",
+    grepl("SS3oligoT_Spacer1", ID) ~ "TSO-CAGCA\nSS3-dT",
+    grepl("SS3oligoT_Fstso", ID) ~ "TSO-FS-UMI\nSS3-dT"))
+  
+  reads.umi <- read.table("/home/vincent.hahaut/data_storage/FS_intermediate_file/reads.umi.txt", sep = "\t", header = T)%>%    
+    mutate(CONDITION = case_when(
+    grepl("5_SS3|6_SS3", ID) ~ "SS3",
+    grepl("SS3fwd", ID) ~ "SS3\nHagemann-J.",
+    grepl("STRToligoT_Spacer2", ID) ~ "TSO-ATAAC\nSTRT-dT",
+    grepl("STRToligoT_Spacer1", ID) ~ "TSO-CAGCA\nSTRT-dT",
+    grepl("STRToligoT_Fstso", ID) ~ "TSO-FS-UMI\nSTRT-dT",
+    grepl("AAGCA", ID) ~ "TSO-AAGCA\nSTRT-dT",
+    grepl("CATCA", ID) ~ "TSO-CATCA\nSTRT-dT",
+    grepl("CTGAC", ID) ~ "TSO-CTGAC\nSTRT-dT",
+    grepl("ATGAC", ID) ~ "TSO-ATGAC\nSTRT-dT",
+    grepl("CTAAC", ID) ~ "TSO-CTAAC\nSTRT-dT",
+    grepl("FSoligoT_Spacer2", ID) ~ "TSO-ATAAC\nFS-dT",
+    grepl("FSoligoT_Spacer1", ID) ~ "TSO-CAGCA\nFS-dT",
+    grepl("276_LA", ID) ~ "LA-TSO-CAGCA\nSTRT-dT",
+    grepl("FSoligoT_FStso", ID) ~ "TSO-FS-UMI\nFS-dT",
+    grepl("SS3oligoT_Spacer1", ID) ~ "TSO-CAGCA\nSS3-dT",
+    grepl("SS3oligoT_Fstso", ID) ~ "TSO-FS-UMI\nSS3-dT"))
+
+  # 7. Filter data to get only the selected conditions
+  reads.all.tpm <- filter(reads.all, CONDITION %in% condition)
+  reads.umi.tmp <- filter(reads.umi, CONDITION %in% condition)
+
+  # 8. Preprocess the data
+  p.readUMI <- bind_rows(reads.all.tpm, reads.umi.tmp) %>%
+  group_by(ID) %>%
+  summarise(PERC.UMI = ALL[TYPE == "UMI"]/(ALL[TYPE == "ALL"] + ALL[TYPE == "UMI"])) %>%
+  ungroup() %>%
+  mutate(GROUP = case_when(
+           grepl("5_SS3|6_SS3", ID) ~ "SS3",
+           grepl("SS3fwd", ID) ~ "SS3\nHagemann-J.",
+           grepl("STRToligoT_Spacer2", ID) ~ "TSO-ATAAC\nSTRT-dT",
+           grepl("AAGCA", ID) ~ "TSO-AAGCA\nSTRT-dT",
+           grepl("CATCA", ID) ~ "TSO-CATCA\nSTRT-dT",
+           grepl("CTGAC", ID) ~ "TSO-CTGAC\nSTRT-dT",
+           grepl("ATGAC", ID) ~ "TSO-ATGAC\nSTRT-dT",
+           grepl("CTAAC", ID) ~ "TSO-CTAAC\nSTRT-dT",
+           grepl("STRToligoT_Spacer1", ID) ~ "TSO-CAGCA\nSTRT-dT",
+           grepl("STRToligoT_Fstso", ID) ~ "TSO-FS-UMI\nSTRT-dT",
+           grepl("FSoligoT_Spacer2", ID) ~ "TSO-ATAAC\nFS-dT",
+           grepl("FSoligoT_Spacer1", ID) ~ "TSO-CAGCA\nFS-dT",
+           grepl("FSoligoT_FStso", ID) ~ "TSO-FS-UMI\nFS-dT",
+           grepl("276_LA", ID) ~ "LA-TSO-CAGCA\nSTRT-dT",
+           grepl("SS3oligoT_Spacer1", ID) ~ "TSO-CAGCA\nSS3-dT",
+           grepl("SS3oligoT_Fstso", ID) ~ "TSO-FS-UMI\nSS3-dT"),
+         facet = case_when(grepl("SS3$|^SS3", GROUP) ~ "SS3",
+                           grepl("TSO-FS-UMI", GROUP) ~ "FS-UMI",
+                           TRUE  ~ "SPACER")) %>%
+  filter(!is.na(PERC.UMI)) %>% # 1 sample needs to be reprocessed
+  mutate(GROUP = as.factor(GROUP)) %>%
+  
+  # 9. Visualize
+  p.readUMI <- ggplot(aes(y = PERC.UMI, x = reorder(GROUP, PERC.UMI, median), fill = reorder(GROUP, PERC.UMI, median))) + 
+  geom_violin() +
+  geom_boxplot(width = 0.1) +
+  scale_fill_manual(values = mycols) +
+  facet_grid(. ~ facet, scales = "free_x", space = "free") +
+  scale_y_continuous(breaks = seq(0,0.75, .1), limits = c(-0.06,0.5)) +
+  ylab("Proportion of UMI-Reads") + 
+  xlab("") +
+  theme_bw(base_size = 28) +
+  theme(axis.text.x = element_text(size = 18, angle = 45, hjust = 1),
+        strip.text = element_text(face = "bold"),
+        legend.position = "none") +
+  geom_text(aes(x = GROUP, label=paste0("n = ", ..count..)), y=-0.05, stat='count', size=5)
+
+  # 10. Save it
+  ggsave(p.readUMI, filename = paste0( "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/UMI_READS.", suffix, ".tiff"), width = 1.1*length(condition), height = 7, bg = "white")
+
+}
+
+# 11. Get the Percentage of UMI reads
+group1 <- c("SS3","TSO-ATAAC\nSTRT-dT","TSO-CAGCA\nSTRT-dT","TSO-FS-UMI\nSTRT-dT","TSO-AAGCA\nSTRT-dT", "TSO-CATCA\nSTRT-dT","TSO-CTGAC\nSTRT-dT","TSO-ATGAC\nSTRT-dT","TSO-CTAAC\nSTRT-dT", "SS3\nHagemann-J.")
+group2 <- c("TSO-ATAAC\nFS-dT","TSO-CAGCA\nFS-dT","TSO-FS-UMI\nFS-dT","TSO-CAGCA\nSS3-dT","TSO-FS-UMI\nSS3-dT")
+
+percentageUMIReads(condition = group1, suffix = "group1")
+percentageUMIReads(condition = group2, suffix = "group2")
+percentageUMIReads(condition = c(group1, group2), suffix = "group3")
+
+```
+
+
+```{r UMI/Internal - READ COVERAGE, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
+
+source("/home/vincent.hahaut/Desktop/FLASH-Seq/R/general/4_aggregate_files_functions.R")
+
+plotCoverageUMI_INTERNAL <- function(condition = group1, suffix = "group1"){
+  
+  # COLORS
+  mycols <- c("SS3" = "#e6194B",
+    "TSO-ATAAC + STRT-dT"= "#3cb44b",
+    "TSO-CAGCA + STRT-dT"= "#ffe119",
+    "TSO-FS-UMI + STRT-dT"= "#4363d8",
+    "TSO-ATAAC + FS-dT"= "#f58231",
+    "TSO-CAGCA + FS-dT"= "#42d4f4",
+    "TSO-FS-UMI + FS-dT"= "#f032e6",
+    "TSO-CAGCA + SS3-dT"= "#fabed4",
+    "TSO-FS-UMI + SS3-dT"= "#469990",
+    "SS3 Hagemann-J." = "#dcbeff",
+    "TSO-AAGCA + STRT-dT" = '#9A6324',
+    "TSO-CATCA + STRT-dT" = '#bfef45',
+    "TSO-CTGAC + STRT-dT" = '#800000',
+    "TSO-ATGAC + STRT-dT" ='#000075',
+    "TSO-CTAAC + STRT-dT" = '#808000',
+    "LA-TSO-CAGCA + STRT-dT" = "#dcbeff")
+    
+  # 1. Paths to internal/umi gene body coverages
+  path <- "/home/vincent.hahaut/data_storage/210322_NB551561_0044_AHNTL2AFX2/STAR/"
+  ID <- list.files(path)
+  
+  path.interne <- paste0("/home/vincent.hahaut/data_storage/210322_NB551561_0044_AHNTL2AFX2/STAR/", ID, "/ReSQC/", ID, "_INTERNAL_geneBody.all.geneBodyCoverage.txt")
+  path.umi <- paste0("/home/vincent.hahaut/data_storage/210322_NB551561_0044_AHNTL2AFX2/STAR/", ID, "/ReSQC/", ID, "_UMI_geneBody.all.geneBodyCoverage.txt")
+  
+  # 2. Read Files
+  df.internal <- getRESeQC_coverage(path.interne, ID, thread = 5) %>%
+    mutate(TYPE = "INTERNAL",
+           GROUP = case_when(
+             grepl("5_SS3|6_SS3", ID) ~ "SS3",
+             grepl("SS3fwd", ID) ~ "SS3 Hagemann-J.",
+             grepl("AAGCA", ID) ~ "TSO-AAGCA + STRT-dT",
+             grepl("CATCA", ID) ~ "TSO-CATCA + STRT-dT",
+             grepl("CTGAC", ID) ~ "TSO-CTGAC + STRT-dT",
+             grepl("ATGAC", ID) ~ "TSO-ATGAC + STRT-dT",
+             grepl("CTAAC", ID) ~ "TSO-CTAAC + STRT-dT",
+             grepl("STRToligoT_Spacer2", ID) ~ "TSO-ATAAC + STRT-dT",
+             grepl("STRToligoT_Spacer1", ID) ~ "TSO-CAGCA + STRT-dT",
+             grepl("STRToligoT_Fstso", ID) ~ "TSO-FS-UMI + STRT-dT",
+             grepl("276_LA", ID) ~ "LA-TSO-CAGCA + STRT-dT",
+             grepl("FSoligoT_Spacer2", ID) ~ "TSO-ATAAC + FS-dT",
+             grepl("FSoligoT_Spacer1", ID) ~ "TSO-CAGCA + FS-dT",
+             grepl("FSoligoT_FStso", ID) ~ "TSO-FS-UMI + FS-dT",
+             grepl("SS3oligoT_Spacer1", ID) ~ "TSO-CAGCA + SS3-dT",
+             grepl("SS3oligoT_Fstso", ID) ~ "TSO-FS-UMI + SS3-dT")) %>%
+    filter(GROUP %in% condition)
+  
+  df.umi <- getRESeQC_coverage(path.umi, ID, thread = 5) %>%
+    mutate(TYPE = "UMI",
+           GROUP = case_when(
+             grepl("5_SS3|6_SS3", ID) ~ "SS3",
+             grepl("SS3fwd", ID) ~ "SS3 Hagemann-J.",
+             grepl("AAGCA", ID) ~ "TSO-AAGCA + STRT-dT",
+             grepl("CATCA", ID) ~ "TSO-CATCA + STRT-dT",
+             grepl("CTGAC", ID) ~ "TSO-CTGAC + STRT-dT",
+             grepl("ATGAC", ID) ~ "TSO-ATGAC + STRT-dT",
+             grepl("CTAAC", ID) ~ "TSO-CTAAC + STRT-dT",
+             grepl("STRToligoT_Spacer2", ID) ~ "TSO-ATAAC + STRT-dT",
+             grepl("STRToligoT_Spacer1", ID) ~ "TSO-CAGCA + STRT-dT",
+             grepl("STRToligoT_Fstso", ID) ~ "TSO-FS-UMI + STRT-dT",
+             grepl("276_LA", ID) ~ "LA-TSO-CAGCA + STRT-dT",
+             grepl("FSoligoT_Spacer2", ID) ~ "TSO-ATAAC + FS-dT",
+             grepl("FSoligoT_Spacer1", ID) ~ "TSO-CAGCA + FS-dT",
+             grepl("FSoligoT_FStso", ID) ~ "TSO-FS-UMI + FS-dT",
+             grepl("SS3oligoT_Spacer1", ID) ~ "TSO-CAGCA + SS3-dT",
+             grepl("SS3oligoT_Fstso", ID) ~ "TSO-FS-UMI + SS3-dT")) %>%
+    filter(GROUP %in% condition)
+  
+  # 3. Combine UMI / Internal reads
+  df.coverage <- bind_rows(df.internal, df.umi) %>%
+    mutate(GROUP = 
+             factor(GROUP, 
+                    levels = c("SS3", "SS3 Hagemann-J.","TSO-ATAAC + STRT-dT","TSO-CAGCA + STRT-dT","TSO-FS-UMI + STRT-dT","TSO-ATAAC + FS-dT","TSO-CAGCA + FS-dT","TSO-FS-UMI + FS-dT","TSO-CAGCA + SS3-dT","TSO-FS-UMI + SS3-dT", "TSO-AAGCA + STRT-dT","TSO-CATCA + STRT-dT","TSO-CTGAC + STRT-dT","TSO-ATGAC + STRT-dT",
+                               "TSO-CTAAC + STRT-dT", "LA-TSO-CAGCA + STRT-dT"))
+           ) 
+  
+  # 4. Compute the genome body coverage in % + mean / sd
+  p.coverage <- df.coverage %>%
+    gather(Percentile, reads, -ID, -GROUP, -TYPE) %>%
+    group_by(ID) %>%
+    mutate(total = sum(reads)) %>%
+    filter(total > 100000) %>%
+    group_by(ID, GROUP, TYPE) %>%
+    mutate(percentage = 100*reads / sum(reads)) %>%
+    group_by(GROUP, Percentile, TYPE) %>%
+    summarise(mean.c = mean(percentage),
+              sd.c = sd(percentage)) %>%
+    ungroup() %>%
+    mutate(Percentile = as.numeric(Percentile)) %>%
+    filter(!is.na(GROUP)) %>%
+  
+  # 5. Visualize
+  p.coverage <- ggplot(aes(x = as.numeric(Percentile), color = as.factor(GROUP), fill = as.factor(GROUP))) +
+      geom_ribbon(aes(ymin = mean.c - sd.c, ymax = mean.c + sd.c), colour = NA) +
+      geom_line(aes(y=mean.c), size = 1.25) +
+      scale_color_manual(values = mycols) +
+      facet_wrap(~ TYPE, scales = "free_y", ncol = 3) +
+      scale_fill_manual(values = alpha(mycols, 0.15)) +
+      xlab("Gene Body Percentile (5'->3')") +
+      ylab("Coverage Percentage") +
+      theme_cowplot(font_size = 28) +
+      theme(legend.title = element_blank(),
+            legend.position = "bottom",
+            legend.text = element_text(size = 19),
+            strip.text.x = element_text(size = 24),
+            rect = element_rect(size = 0.75, color = "black"), 
+          panel.border = element_rect(size = 0.75, color = "black"), 
+          axis.text.x = element_text(size = 21),
+          strip.text = element_text(face = "bold"),
+          panel.grid.major.y = element_line(linetype = "dotted", color = "darkgrey", size = 0.5),
+          axis.line.y.right = element_line(color = "black", linetype = "solid", size = 1)) +
+    guides(color= guide_legend(ncol=4,byrow=TRUE))
+
+  # 5. Save it
+  ggsave(p.coverage, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/UMI_COVERAGE.", suffix, ".tiff"), width = 16, height = 10, bg = "white")
+
+}
+
+group1 <- c("SS3","TSO-CAGCA + STRT-dT","TSO-AAGCA + STRT-dT", "TSO-CATCA + STRT-dT","TSO-CTGAC + STRT-dT","TSO-ATGAC + STRT-dT","TSO-CTAAC + STRT-dT", "TSO-ATAAC + STRT-dT","TSO-CAGCA + STRT-dT","TSO-FS-UMI + STRT-dT","SS3 Hagemann-J.")
+group2 <- c("TSO-ATAAC + FS-dT","TSO-CAGCA + FS-dT","TSO-FS-UMI + FS-dT","TSO-CAGCA + SS3-dT","TSO-FS-UMI + SS3-dT")
+group4 <- c("SS3", "SS3 Hagemann-J.", "TSO-FS-UMI + STRT-dT", "TSO-FS-UMI + SS3-dT",
+"TSO-CATCA + STRT-dT","TSO-CTAAC + STRT-dT", "TSO-CAGCA + STRT-dT", "TSO-ATAAC + STRT-dT")
+group5 <- c("TSO-AAGCA + STRT-dT","TSO-CTGAC + STRT-dT","TSO-ATGAC + STRT-dT","TSO-ATAAC + FS-dT","TSO-CAGCA + FS-dT","TSO-FS-UMI + FS-dT","TSO-CAGCA + SS3-dT")
+
+plotCoverageUMI_INTERNAL(condition = group1, suffix = "group1")
+plotCoverageUMI_INTERNAL(condition = group2, suffix = "group2")
+plotCoverageUMI_INTERNAL(condition = group4, suffix = "group4")
+plotCoverageUMI_INTERNAL(condition = group5, suffix = "group5")
+
+```
+
+```{r UMI/Internal - READ DISTRIBUTION, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
+
+plotReadDistribUMI_INTERNAL <- function(condition = group1, suffix = "group1"){
+  
+  # 1. Get the paths to internal/umi read_distribution
+  path <- "/home/vincent.hahaut/data_storage/210322_NB551561_0044_AHNTL2AFX2/STAR/"
+  ID <- list.files(path)
+  path.all <- paste0("/home/vincent.hahaut/data_storage/210322_NB551561_0044_AHNTL2AFX2/STAR/", ID, "/ReSQC/", ID, "_ALL_readDistribution.txt")
+  path.interne <- paste0("/home/vincent.hahaut/data_storage/210322_NB551561_0044_AHNTL2AFX2/STAR/", ID, "/ReSQC/", ID, "_INTERNAL_readDistribution.txt")
+  path.umi <- paste0("/home/vincent.hahaut/data_storage/210322_NB551561_0044_AHNTL2AFX2/STAR/", ID, "/ReSQC/", ID, "_UMI_readDistribution.txt")
+  
+  # 2. Read and filter the data
+  df.internal <- getRESeQC_readDistribution(path.interne, ID, thread = 5) %>%
+    mutate(TYPE = "INTERNAL",
+           GROUP = case_when(
+             grepl("5_SS3|6_SS3", ID) ~ "SS3",
+             grepl("SS3fwd", ID) ~ "SS3\ndata frm Hagemann-J. et al",
+             grepl("STRToligoT_Spacer2", ID) ~ "TSO-ATAAC\nSTRT-dT",
+             grepl("AAGCA", ID) ~ "TSO-AAGCA\nSTRT-dT",
+             grepl("CATCA", ID) ~ "TSO-CATCA\nSTRT-dT",
+             grepl("CTGAC", ID) ~ "TSO-CTGAC\nSTRT-dT",
+             grepl("ATGAC", ID) ~ "TSO-ATGAC\nSTRT-dT",
+             grepl("CTAAC", ID) ~ "TSO-CTAAC\nSTRT-dT",
+             grepl("276_LA", ID) ~ "TSO-CAGCA\nSTRT-dT",
+             grepl("STRToligoT_Spacer1", ID) ~ "TSO-CAGCA\nSTRT-dT",
+             grepl("STRToligoT_Fstso", ID) ~ "TSO-FS-UMI\nSTRT-dT",
+             grepl("FSoligoT_Spacer2", ID) ~ "TSO-ATAAC\nFS-dT",
+             grepl("FSoligoT_Spacer1", ID) ~ "TSO-CAGCA\nFS-dT",
+             grepl("FSoligoT_FStso", ID) ~ "TSO-FS-UMI\nFS-dT",
+             grepl("SS3oligoT_Spacer1", ID) ~ "TSO-CAGCA\nSS3-dT",
+             grepl("SS3oligoT_Fstso", ID) ~ "TSO-FS-UMI\nSS3-dT")) %>%
+    filter(GROUP %in% condition)
+  
+  df.umi <- getRESeQC_readDistribution(path.umi, ID, thread = 5) %>%
+    mutate(TYPE = "UMI",
+           GROUP = case_when(
+             grepl("5_SS3|6_SS3", ID) ~ "SS3",
+             grepl("SS3fwd", ID) ~ "SS3\ndata from Hagemann-J. et al",
+             grepl("STRToligoT_Spacer2", ID) ~ "TSO-ATAAC\nSTRT-dT",
+             grepl("AAGCA", ID) ~ "TSO-AAGCA\nSTRT-dT",
+             grepl("CATCA", ID) ~ "TSO-CATCA\nSTRT-dT",
+             grepl("CTGAC", ID) ~ "TSO-CTGAC\nSTRT-dT",
+             grepl("ATGAC", ID) ~ "TSO-ATGAC\nSTRT-dT",
+             grepl("CTAAC", ID) ~ "TSO-CTAAC\nSTRT-dT",
+             grepl("276_LA", ID) ~ "TSO-CAGCA\nSTRT-dT",
+             grepl("STRToligoT_Spacer1", ID) ~ "TSO-CAGCA\nSTRT-dT",
+             grepl("STRToligoT_Fstso", ID) ~ "TSO-FS-UMI\nSTRT-dT",
+             grepl("FSoligoT_Spacer2", ID) ~ "TSO-ATAAC\nFS-dT",
+             grepl("FSoligoT_Spacer1", ID) ~ "TSO-CAGCA\nFS-dT",
+             grepl("FSoligoT_FStso", ID) ~ "TSO-FS-UMI\nFS-dT",
+             grepl("SS3oligoT_Spacer1", ID) ~ "TSO-CAGCA\nSS3-dT",
+             grepl("SS3oligoT_Fstso", ID) ~ "TSO-FS-UMI\nSS3-dT")) %>%
+    filter(GROUP %in% condition)
+  
+  # 3. Combine UMI / Internal
+  df.readDistrib <- bind_rows(df.internal, df.umi) %>%
+    gather(distribution, val, -ID, -GROUP, -TYPE) %>%
+    filter(!distribution %in% c("TSS_up_1kb", "TSS_up_5kb", "TSS_down_1kb", "TSS_down_1kb",  "TES_down_10kb", "TES_down_1kb" , "TES_down_5kb", "TSS_up_10kb", "totalReadTags")) %>%
+    mutate(distribution = case_when(distribution == "UTR5_Exons" ~ "5'UTR Exons",
+                                    distribution == "UTR3_Exons" ~ "3'UTR Exons",
+                                    distribution == "CDS_Exons" ~ "CDS Exons",
+                                    distribution == "Introns" ~ "Introns",
+                                    distribution == "Intergenic" ~ "Intergenic"),
+           facet = paste0(distribution, "\n", TYPE)) %>%
+    group_by(GROUP, ID, TYPE) %>%
+    mutate(total = sum(val)) %>%
+    ungroup() %>%
+    mutate(perc = 100*val / total,
+           GROUP = factor(GROUP)) %>%
+    filter(!ID %in% c("245_FS_UMI_FSoligoT_Spacer1_H2","245_FS_UMI_STRToligoT_Spacer2_H12","274_TSO_AAGCA_H8","274_TSO_CTAAC_E1","276_LA_TSOspacer1_A1","276_LA_TSOspacer1_C1","276_LA_TSOspacer1_D2","276_LA_TSOspacer1_E1","276_LA_TSOspacer1_E2","276_LA_TSOspacer1_F2","276_LA_TSOspacer1_G1","276_LA_TSOspacer1_H2","311_CTAAC_Biotin_F2","311_CTAAC_Biotin_I1","311_CTAAC_noBiotin_J3","5_SS3_A6","5_SS3_B6","5_SS3_C6","5_SS3_D6","5_SS3_E6","5_SS3_F6","5_SS3_G6","5_SS3_H3","5_SS3_H5","274_TSO_CATCA_H9","276_LA_TSOspacer1_A2","276_LA_TSOspacer1_B1","276_LA_TSOspacer1_B2","276_LA_TSOspacer1_C2","276_LA_TSOspacer1_D1","276_LA_TSOspacer1_F1","276_LA_TSOspacer1_G2","276_LA_TSOspacer1_H1","311_CTAAC_noBiotin_I4","311_CTAAC_noBiotin_N4"))
+  
+  # 4. Create a separated plot for every feature. Only way I found to scale nicely the y-axis
+  p.readDistrib.l <- list()
+  
+  for(i in c("CDS Exons", "Introns", "5'UTR Exons", "3'UTR Exons", "Intergenic")){
+    
+    scaleY <- if(i == "CDS Exons"){
+      seq(10,85,10)
+      } else if(i == "Introns"){
+        seq(0,65,10)
+        } else if(i == "5'UTR Exons"){
+          seq(0,100,10)
+        }else if(i == "3'UTR Exons"){
+          seq(0,45,10)
+        }else if(i == "Intergenic"){
+          seq(0,50,10)
+          }
+    
+    p.readDistrib.l[[i]] <- filter(df.readDistrib, distribution == i) %>%
+    ggplot() +
+    geom_boxplot(aes(y = perc, x = GROUP, fill = distribution), width = 0.6) +
+    facet_wrap(~ facet, scales = "free_y", ncol = 1) +
+    scale_fill_manual(values = c("CDS Exons" = "#1B9E77", 
+                                 "Introns" =  "#D95F02", 
+                                 "5'UTR Exons" =  "#7570B3",
+                                 "3'UTR Exons" =  "#E7298A",
+                                 "Intergenic" =  "#66A61E")) +
+    ylab("Read Tags (%)") + 
+    xlab("") +
+    scale_y_continuous(breaks = scaleY, limits = c(min(scaleY), max(scaleY))) +
+    xlab("") +
+    theme_cowplot(font_size = 28) +
+    theme(legend.position = "none", 
+          strip.background = element_rect(size = 0.75, color = "black"), 
+          panel.border = element_rect(size = 0.75, color = "black"), 
+          axis.text.x = element_text(size = 13, angle = 45, hjust = 1),
+          strip.text = element_text(face = "bold"),
+          panel.grid.major.y = element_line(linetype = "dotted", color = "darkgrey", size = 0.5),
+          axis.line.y.right = element_line(color = "black", linetype = "solid", size = 1))
+  }
+  
+  # 5. Save it
+  ggsave(plot_grid(nrow = 3,
+    p.readDistrib.l[[1]], 
+    p.readDistrib.l[[2]], 
+    p.readDistrib.l[[3]], 
+    p.readDistrib.l[[4]], 
+    p.readDistrib.l[[5]]), 
+    filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/UMI_readDistrib.", suffix, ".tiff"), width = 18, height = 28, bg = "white", dpi = 200)
+
+}
+
+
+group1 <- c("SS3","TSO-CAGCA\nSTRT-dT","TSO-AAGCA\nSTRT-dT", "TSO-CATCA\nSTRT-dT","TSO-CTGAC\nSTRT-dT","TSO-ATGAC\nSTRT-dT","TSO-CTAAC\nSTRT-dT", "TSO-ATAAC\nSTRT-dT","TSO-CAGCA\nSTRT-dT","TSO-FS-UMI\nSTRT-dT","SS3\ndata from Hagemann-J. et al")
+group2 <- c("TSO-ATAAC\nFS-dT","TSO-CAGCA\nFS-dT","TSO-FS-UMI\nFS-dT","TSO-CAGCA\nSS3-dT","TSO-FS-UMI\nSS3-dT")
+
+plotReadDistribUMI_INTERNAL(condition = group1, suffix = "group1")
+plotReadDistribUMI_INTERNAL(condition = group2, suffix = "group2")
+plotReadDistribUMI_INTERNAL(condition = c(group1, group2), suffix = "group3")
+
+
+```
+
+```{r UMI/internal - STAR mapping stats, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
+
+plotSTARfsUMIinfo <- function(condition = group1, suffix = "group1"){
+
+  # 1. Paths to UMI/Internal STAR log final.out
+  path <- "/home/vincent.hahaut/data_storage/210322_NB551561_0044_AHNTL2AFX2/STAR/"
+  ID <- list.files(path)
+  path.all <- paste0("/home/vincent.hahaut/data_storage/210322_NB551561_0044_AHNTL2AFX2/STAR/", ID, "/STAR/", ID, "_ALL_Log.final.out")
+  path.interne <- paste0("/home/vincent.hahaut/data_storage/210322_NB551561_0044_AHNTL2AFX2/STAR/", ID, "/STAR/", ID, "_INTERNAL_Log.final.out")
+  path.umi <- paste0("/home/vincent.hahaut/data_storage/210322_NB551561_0044_AHNTL2AFX2/STAR/", ID, "/STAR/", ID, "_UMI_Log.final.out")
+
+  # 2. Read results
+  df.all <- getSTARLog(path.all, ID, thread = 5) %>%
+    mutate(TYPE = "ALL",
+           GROUP = case_when(
+             grepl("5_SS3|6_SS3", ID) ~ "SS3",
+             grepl("SS3fwd", ID) ~ "SS3\ndata from Hagemann-J. et al",
+             grepl("STRToligoT_Spacer2", ID) ~ "TSO-ATAAC\nSTRT-dT",
+             grepl("AAGCA", ID) ~ "TSO-AAGCA\nSTRT-dT",
+             grepl("CATCA", ID) ~ "TSO-CATCA\nSTRT-dT",
+             grepl("CTGAC", ID) ~ "TSO-CTGAC\nSTRT-dT",
+             grepl("ATGAC", ID) ~ "TSO-ATGAC\nSTRT-dT",
+             grepl("CTAAC", ID) ~ "TSO-CTAAC\nSTRT-dT",
+             grepl("276_LA", ID) ~ "TSO-CAGCA\nSTRT-dT",
+             grepl("STRToligoT_Spacer1", ID) ~ "TSO-CAGCA\nSTRT-dT",
+             grepl("STRToligoT_Fstso", ID) ~ "TSO-FS-UMI\nSTRT-dT",
+             grepl("FSoligoT_Spacer2", ID) ~ "TSO-ATAAC\nFS-dT",
+             grepl("FSoligoT_Spacer1", ID) ~ "TSO-CAGCA\nFS-dT",
+             grepl("FSoligoT_FStso", ID) ~ "TSO-FS-UMI\nFS-dT",
+             grepl("SS3oligoT_Spacer1", ID) ~ "TSO-CAGCA\nSS3-dT",
+             grepl("SS3oligoT_Fstso", ID) ~ "TSO-FS-UMI\nSS3-dT")) %>%
+    filter(GROUP %in% condition)
+  
+  df.internal <- getSTARLog(path.interne, ID, thread = 5) %>%
+    mutate(TYPE = "INTERNAL",
+           GROUP = case_when(
+             grepl("5_SS3|6_SS3", ID) ~ "SS3",
+             grepl("SS3fwd", ID) ~ "SS3\ndata from Hagemann-J. et al",
+             grepl("STRToligoT_Spacer2", ID) ~ "TSO-ATAAC\nSTRT-dT",
+             grepl("AAGCA", ID) ~ "TSO-AAGCA\nSTRT-dT",
+             grepl("CATCA", ID) ~ "TSO-CATCA\nSTRT-dT",
+             grepl("CTGAC", ID) ~ "TSO-CTGAC\nSTRT-dT",
+             grepl("ATGAC", ID) ~ "TSO-ATGAC\nSTRT-dT",
+             grepl("CTAAC", ID) ~ "TSO-CTAAC\nSTRT-dT",
+             grepl("276_LA", ID) ~ "TSO-CAGCA\nSTRT-dT",
+             grepl("STRToligoT_Spacer1", ID) ~ "TSO-CAGCA\nSTRT-dT",
+             grepl("STRToligoT_Fstso", ID) ~ "TSO-FS-UMI\nSTRT-dT",
+             grepl("FSoligoT_Spacer2", ID) ~ "TSO-ATAAC\nFS-dT",
+             grepl("FSoligoT_Spacer1", ID) ~ "TSO-CAGCA\nFS-dT",
+             grepl("FSoligoT_FStso", ID) ~ "TSO-FS-UMI\nFS-dT",
+             grepl("SS3oligoT_Spacer1", ID) ~ "TSO-CAGCA\nSS3-dT",
+             grepl("SS3oligoT_Fstso", ID) ~ "TSO-FS-UMI\nSS3-dT")) %>%
+    filter(GROUP %in% condition)
+  
+  df.umi <- getSTARLog(path.umi, ID, thread = 5) %>%
+    mutate(TYPE = "UMI",
+           GROUP = case_when(
+             grepl("5_SS3|6_SS3", ID) ~ "SS3",
+             grepl("SS3fwd", ID) ~ "SS3\ndata from Hagemann-J. et al",
+             grepl("STRToligoT_Spacer2", ID) ~ "TSO-ATAAC\nSTRT-dT",
+             grepl("AAGCA", ID) ~ "TSO-AAGCA\nSTRT-dT",
+             grepl("CATCA", ID) ~ "TSO-CATCA\nSTRT-dT",
+             grepl("CTGAC", ID) ~ "TSO-CTGAC\nSTRT-dT",
+             grepl("ATGAC", ID) ~ "TSO-ATGAC\nSTRT-dT",
+             grepl("CTAAC", ID) ~ "TSO-CTAAC\nSTRT-dT",
+             grepl("276_LA", ID) ~ "TSO-CAGCA\nSTRT-dT",
+             grepl("STRToligoT_Spacer1", ID) ~ "TSO-CAGCA\nSTRT-dT",
+             grepl("STRToligoT_Fstso", ID) ~ "TSO-FS-UMI\nSTRT-dT",
+             grepl("FSoligoT_Spacer2", ID) ~ "TSO-ATAAC\nFS-dT",
+             grepl("FSoligoT_Spacer1", ID) ~ "TSO-CAGCA\nFS-dT",
+             grepl("FSoligoT_FStso", ID) ~ "TSO-FS-UMI\nFS-dT",
+             grepl("SS3oligoT_Spacer1", ID) ~ "TSO-CAGCA\nSS3-dT",
+             grepl("SS3oligoT_Fstso", ID) ~ "TSO-FS-UMI\nSS3-dT")) %>%
+    filter(GROUP %in% condition)
+
+  # 2. Aggregate results
+  df.star <- bind_rows(df.internal, df.umi) %>%
+      dplyr::select(ID, P_uniquely_mapped_reads, P_too_short_read, P_multiple_Loci, GROUP, TYPE) %>%
+      gather(reads, perc, -ID, -GROUP, -TYPE) %>%
+      mutate(perc = as.numeric(perc),
+             reads = case_when(
+               reads == "P_uniquely_mapped_reads" ~ "Uniquely Mapped",
+               reads == "P_too_short_read" ~ "Unmapped",
+               reads == "P_multiple_Loci" ~ "Multiple Loci"),
+             reads = factor(reads, levels = c("Uniquely Mapped", "Multiple Loci", "Unmapped")),
+             GROUP = factor(GROUP),
+             facet = paste0(reads, "\n", TYPE)) 
+      
+  # 3. Filter too low quality cells
+  id <- df.star %>%
+      group_by(ID, TYPE) %>%
+      mutate(filt = perc[reads == "Uniquely Mapped"] < 60 | perc[reads == "Unmapped"] > 25) %>% 
+      filter(filt)
+  df.star <- filter(df.star, !ID %in% id$ID)
+  
+  # 4. Create a separated plot for every feature. Only way I found to scale nicely the y-axis
+  p.star.l <- list()
+  for(i in c("Uniquely Mapped", "Multiple Loci", "Unmapped")){
+    
+    scaleY <- if(i == "Uniquely Mapped"){
+      seq(0,100,10)
+      } else if(i == "Multiple Loci"){
+        seq(0,100,10)
+        } else if(i == "Unmapped"){
+          seq(0,100,10)
+          }
+    
+    p.star.l[[i]] <- filter(df.star, reads == i) %>%
+    ggplot() +
+    geom_boxplot(aes(y = perc, x = GROUP, fill = reads), width = 0.6) +
+    facet_wrap("facet", scales = "free_y", nrow = 1) +
+    scale_fill_manual(values = c("Uniquely Mapped" = "#E41A1C", 
+                                 "Multiple Loci" =  "#377EB8", 
+                                 "Unmapped" =  "#4DAF4A")) +
+    ylab("Percentage Reads") + 
+    scale_y_continuous(breaks = scaleY, limits = c(min(scaleY), max(scaleY))) +
+    xlab("") +
+    theme_cowplot(font_size = 24) +
+    theme(legend.position = "none", 
+          strip.background = element_rect(size = 0.75, color = "black"), 
+          panel.border = element_rect(size = 0.75, color = "black"), 
+          axis.text.x = element_text(size = 16, angle = 45, hjust = 1),
+          strip.text = element_text(face = "bold"),
+          panel.grid.major.y = element_line(linetype = "dotted", color = "darkgrey", size = 0.5),
+          axis.line.y.right = element_line(color = "black", linetype = "solid", size = 1))
+  }
+
+  # 5. Save it
+  ggsave(plot_grid(
+    p.star.l[[1]], 
+    p.star.l[[2]], 
+    p.star.l[[3]], nrow = 3), 
+    filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/UMI_STAR.", suffix, ".tiff"), width = 1.5*length(condition), height = 24, bg = "white", dpi = 200)
+}
+
+group1 <- c("SS3","TSO-CAGCA\nSTRT-dT","TSO-AAGCA\nSTRT-dT", "TSO-CATCA\nSTRT-dT","TSO-CTGAC\nSTRT-dT","TSO-ATGAC\nSTRT-dT","TSO-CTAAC\nSTRT-dT", "TSO-ATAAC\nSTRT-dT","TSO-CAGCA\nSTRT-dT","TSO-FS-UMI\nSTRT-dT","SS3\ndata from Hagemann-J. et al")
+group2 <- c("TSO-ATAAC\nFS-dT","TSO-CAGCA\nFS-dT","TSO-FS-UMI\nFS-dT","TSO-CAGCA\nSS3-dT","TSO-FS-UMI\nSS3-dT")
+
+plotSTARfsUMIinfo(condition = group1, suffix = "group1")
+plotSTARfsUMIinfo(condition = group2, suffix = "group2")
+plotSTARfsUMIinfo(condition = c(group1, group2), suffix = "group3")
+
+```
+
+```{r TSO-UMI cDNA Yield - Tn5, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
+
+# 1. Load data
+yield <- read.table("/home/vincent.hahaut/data_storage/FS_intermediate_file/TSO-UMI_cDNAYield.txt", sep = "\t", header = T, as.is = T) %>%
+  mutate(Method = str_replace(Method, "\\\\n", "\\+"),
+         Method = str_replace(Method, "\\+", "\\\n"),
+         facet = case_when(grepl("SS3$", Method) ~ "SS3",
+                           grepl("TSO-FS-UMI", Method) ~ "FS-UMI-TSO",
+                           TRUE ~ "SPACER"))
+
+# Colors
+mycols <- c("SS3" = "#e6194B",
+  "TSO-ATAAC\nSTRT-dT"= "#3cb44b",
+  "TSO-CAGCA\nSTRT-dT"= "#ffe119",
+  "TSO-FS-UMI\nSTRT-dT"= "#4363d8",
+  "TSO-ATAAC\nFS-dT"= "#f58231",
+  "TSO-CAGCA\nFS-dT"= "#42d4f4",
+  "TSO-FS-UMI\nFS-dT"= "#f032e6",
+  "TSO-CAGCA\nSS3-dT"= "#fabed4",
+  "TSO-FS-UMI\nSS3-dT"= "#469990",
+  "TSO-ATAAC\nFS-dT"= "#e6e2a5", 
+  "TSO-AAGCA\nSTRT-dT" = '#9A6324',
+  "TSO-CATCA\nSTRT-dT" = '#bfef45',
+  "TSO-CTGAC\nSTRT-dT" = '#800000',
+  "TSO-ATGAC\nSTRT-dT" ='#000075',
+  "TSO-CTAAC\nSTRT-dT" = '#808000')
+
+# 2. Visualize
+pcDNA <- ggplot(yield, aes(x = reorder(Method, cDNA.Yield, mean), y = cDNA.Yield, fill = Method)) +
+  geom_hline(yintercept = seq(0,5,1), color = "darkgrey", linetype = "dashed") +
+  geom_boxplot() +
+  facet_grid(cols = vars(facet), space = "free", scales = "free_x") +
+  scale_fill_manual(values = mycols) +
+  theme_bw(base_size = 28) +
+  ylab("cDNA Yield (ng/μL)") +
+  theme(axis.text.x = element_text(size = 20, angle = 45, hjust = 1),
+        legend.position = "none") + 
+  xlab("") 
+
+# 3. Save
+ggsave(pcDNA, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_cDNA_yield.TSOumi.tiff", width = 20, height = 8, dpi = 300)
+```
