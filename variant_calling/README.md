@@ -2,8 +2,9 @@
 
 ## File Description
 
-* **Mapping / BAM processing / Variant Calling:** scRNA_variant_calling.sh
-* **Data Analysis:** scRNA_variant_calling_postprocess.R
+* **scRNA_variant_calling.sh**: Mapping, BAM processing, downsampling, variant Calling, ...
+
+* **scRNA_variant_calling_postprocess.R** data analysis.
 
 ## Notes
 
