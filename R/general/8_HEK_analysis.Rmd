@@ -84,10 +84,15 @@ summaryPlots <- function(mydata = mydata, title = NULL, mycols = NULL){
   if(length(unique(mydata$NAME)) > 2){
     
     if(broom::tidy(kruskal.test(mydata$count_0, mydata$NAME))$p.value < 0.05){
-      mytest <- FSA::dunnTest(mydata$count_0, mydata$NAME, method = "bonferroni")
-      mytest <- data_frame(group1 = str_split(mytest$res[,1], " - ", simplify = TRUE)[,1], 
-                           group2 =  str_split(mytest$res[,1], " - ", simplify = TRUE)[,2],
-                           p.value = mytest$res$P.adj)
+      mytest <- mydata %>%
+        rstatix::dunn_test(count_0 ~ NAME, p.adjust.method = "bonferroni")%>%
+        rstatix::add_y_position(fun = "max", scales = "free") %>%
+        mutate(p.adj.signif = formatC(p, format = "e", digits = 2))
+      
+      y <- min(diff(mytest$y.position))
+      mytest <- mytest %>% 
+        filter(p.adj < 0.05) %>%
+        mutate(y.position = seq(min(y.position), (min(y.position)+y*(n()-1)), y))
     } else {
       mytest <- data_frame(group1 = "A",
                            group2 =  "B",
@@ -95,10 +100,12 @@ summaryPlots <- function(mydata = mydata, title = NULL, mycols = NULL){
     }
   } else {
 
-    mytest <- broom::tidy(wilcox.test(data = mydata, mydata$count_0 ~ mydata$NAME, alternative = "two.sided"))
-    mytest <- data_frame(group1 = levels(factor(mydata$NAME))[1], 
-                         group2 =  levels(factor(mydata$NAME))[2], 
-                         p.value = mytest$p.value)
+      mytest <- mydata %>%
+        rstatix::wilcox_test(count_0 ~ NAME) %>%
+        rstatix::add_y_position(fun = "max", scales = "free") %>%
+        mutate(p.adj.signif = formatC(p, format = "e", digits = 2)) %>%
+        filter(p < 0.05)
+
   }
   
   # 1.2. Display the gene counts
@@ -106,8 +113,9 @@ summaryPlots <- function(mydata = mydata, title = NULL, mycols = NULL){
     geom_hline(yintercept = seq(0,max(mydata$count_0)*1.1,1000), linetype = "dotted", color = "darkgrey") +
     geom_violin(data = mydata, aes(y = count_0, x = NAME, fill = reorder(NAME, count_0, median))) +
     geom_boxplot(data = mydata, aes(y = count_0, x = NAME, fill = reorder(NAME, count_0, median)), width=0.1) +
+    ggpubr::stat_pvalue_manual(mytest, label = "p = {p.adj.signif}", step.increase = 0.05, tip.length = 0.01, size = 6) +
     scale_fill_manual(values = mycols) +
-    scale_y_continuous(breaks = seq(0,max(mydata$count_0)*1.1,1000)) +
+    scale_y_continuous(breaks = seq(0,max(mydata$count_0)*1.1,1000), labels = as.character(formatC(seq(0,max(mydata$count_0)*1.1,1000), format="d", big.mark=",") )) +
     scale_color_brewer(palette = "Dark2") +
     ylab("Detected Genes") + 
     xlab("") +
@@ -121,28 +129,7 @@ summaryPlots <- function(mydata = mydata, title = NULL, mycols = NULL){
           axis.title = element_text(size = 24),
           legend.text = element_text(size = 18)) +
     geom_text(data = mydata, aes(y = 0, x = NAME, label=paste0("n = ", ..count..)), y=0, stat='count', size=6)
-  
-  # 1.3. Add significance info if any < 0.05
-  mytest <- filter(mytest, p.value < 0.05)
-  if(nrow(mytest) > 0){
-    index <- 1:nrow(mytest)
-    
-    pos.stats <- mytest %>% mutate(
-      y.seg = max(mydata$count_0) + max(mydata$count_0)*(1.2*index/50),
-      y.lab = y.seg * 1.0005,
-      lab = case_when(p.value < 0.05 & p.value > 0.005 ~ "*",
-                      p.value < 0.005 & p.value > 0.0005 ~ "**",
-                      p.value < 0.0005 ~ "***",
-                      TRUE ~ "NA")) %>%
-      rowwise() %>%
-      mutate(lab.pos = mean(c(which(levels(factor(mydata$NAME)) == group1), which(levels(factor(mydata$NAME)) == group2)))) %>%
-      ungroup()
-    
-    p.gene <- p.gene +
-      geom_segment(data = pos.stats, aes(y = y.seg, yend = y.seg, x = group1, xend = group2), size = 0.25) +
-      geom_text(data = pos.stats, aes(y = y.lab, label = lab, x = lab.pos), size = 6)
-    
-  }
+
   
   # 2. ReSQC read tag distribution
   p.resqc <- filter(resqc, ID %in% mydata$ID) %>%
@@ -214,11 +201,10 @@ summaryPlots <- function(mydata = mydata, title = NULL, mycols = NULL){
            p.resqc, nrow = 2, label_size = 28, labels = c("", "c")) + theme(panel.background = element_rect(color = "white"),
                                                                             plot.background = element_rect(color = "white")), 
          filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/", title, ".tiff"),
-         dpi = 300, width = 32, height = 20)
+         dpi = 450, width = 32, height = 20)
   
   return(list(p.gene, p.star,p.resqc))
 }
-
 
 ```
 
@@ -226,7 +212,7 @@ summaryPlots <- function(mydata = mydata, title = NULL, mycols = NULL){
 ```{r Load Data, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
 
 # 0. Load the global sample sheet
-SAMPLESHEET <- read.delim("/home/vincent.hahaut/Desktop/GITHUB/IOB/SampleSheet/FS_GLOBAL_SAMPLESHEET_17112021.txt", sep = "\t")
+SAMPLESHEET <- read.delim("/home/vincent.hahaut/Desktop/GITHUB/IOB/sampleSheet/FS_GLOBAL_SAMPLESHEET_17112021.txt", sep = "\t")
 
 # 1. STAR - Statistics (getSTARlog)
 STAR.log <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/STAR.logs.2021-12-05.rds.bz")
@@ -241,8 +227,8 @@ sce <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/downsamp
 
 # 4. Salmon (sceToExpressedGenes)
 # Downsampled to 250 or 500K raw reads
-sce.sal.500K.med <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/downsampling_medianGenes_salmon.all.500000.2021-12-05.rds.bz")
-sce.sal.250K.med <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/downsampling_medianGenes_salmon.all.250000.2021-12-05.rds.bz")
+sce.sal.500K.med <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/downsampling_medianGenes_salmon.all.500000.2022-03-25.rds.bz")
+# sce.sal.250K.med <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/downsampling_medianGenes_salmon.all.250000.2021-12-05.rds.bz")
 
 # 5. RESQC - READ DISTRIBUTION (getRESeQC_readDistribution)
 resqc <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/ReSQC.distribution.2021-12-05.rds.bz")
@@ -287,46 +273,51 @@ shapiro.test(mydata$count_0)
 
 # 2.1.2. Kruskal-wallis / Dunn's test
 kruskal.test(data = mydata %>% filter(DEPTH == 500000), count_0 ~ NAME)
-FSA::dunnTest(count_0 ~ NAME, data=mydata %>% filter(DEPTH == 500000 & NAME != "FS - 5 µL (Miniaturized)"), method="bonferroni")      
-FSA::dunnTest(count_5 ~ NAME, data=mydata %>% filter(DEPTH == 500000 & NAME != "FS - 5 µL (Miniaturized)"), method="bonferroni")      
 
-# 2.1.3. Significance levels for the graphics
-# Early-days still manual
-geomseg <- data_frame(NAME = c("SS2", "FS", "FS", "SS2", "FS", "SS2"),
-                      x = c(0.7, 1.3, 1.3, 2, 2, 2.3),
-                      xend = c(1, 1, 0.7, 1.7, 2.3, 1.7),
-                      y = rep(seq(12200,12800,300),2),
-                      yend = rep(seq(12200,12800,300),2),
-                      lab = c("***", "***", "***", "**", "***", "***"))
-
-# 2.2. Display results
-p1.500K <- mydata %>%
+mydata.tmp <- mydata %>%
   filter(DEPTH == 500000 & NAME != "FS - 5 µL (Miniaturized)") %>%
   dplyr::select(count_5, count_0, NAME) %>%
-  gather(key, val, -NAME) %>%
-  ggplot(aes(y = val, x = key, fill = NAME)) +
+  pivot_longer(-NAME, names_to = "threshold", values_to = "genes") %>%
+  mutate(group = paste0(threshold, "_", NAME), 
+         group = factor(group, levels = c(
+           paste0("count_0_", c("SS2", "SS3", "FS - 25 µL")),
+           paste0("count_5_", c("SS2", "SS3", "FS - 25 µL")))))
+
+
+p.signif <- mydata.tmp %>% 
+  group_by(threshold) %>%
+  rstatix::dunn_test(genes ~ group, p.adjust.method = "bonferroni") %>%
+  filter(p.adj < 0.05) %>% 
+  rstatix::add_y_position(fun = "max", scales = "free") %>%
+  mutate(p.adj.signif = formatC(p.adj, format = "e", digits = 2),
+         y.position = rep(c(12000, 13000, 14000), 2))
+
+# 2.2. Display results
+p1.500K <- ggplot() +
   geom_hline(yintercept = seq(0,12000,1000), linetype = "dotted", color = "darkgrey") +
-  geom_violin() +
-  geom_boxplot(width = 0.1, position = position_dodge(width = 0.9)) +
-  geom_segment(data = geomseg, aes(x = x, xend = xend, y = y, yend = yend)) +
+  geom_violin(data = mydata.tmp, aes(y = genes, x = group, fill = NAME)) +
+  geom_boxplot(data = mydata.tmp, aes(y = genes, x = group, fill = NAME), width = 0.1, position = position_dodge(width = 0.9)) +
   scale_fill_manual(values = c("FS - 25 µL" = "#E41A1C",
                                "SS2" = "#377EB8",
                                "SS3" = "#4DAF4A")) +
   scale_y_continuous(breaks = seq(0,12000,1000)) +
   scale_x_discrete(labels = c(">0 read", ">5 reads")) +
-  ylab("Detected Genes") + 
+  ylab("Genes Detected") + 
   xlab("") +
   theme_cowplot(font_size = 28) +
   theme(legend.title = element_blank(),
         axis.text = element_text(size = 22), 
         axis.title = element_text(size = 24),
+        legend.position = "none",
+        axis.text.x = element_blank(), axis.ticks.x = element_blank(),
         legend.text = element_text(size = 22))  +
-  geom_text(data = geomseg, aes(y = y+20, x = (x+xend)/2, label = lab), size = 6) +
-  geom_text(data = data.frame(NAME = c("SS2", "SS3", "FS")), aes(y = c(-220,-220,-220), x = c(0.7,1,1.3), label = c("n=80", "n=51", "n=105")), size = 5) 
+  scale_y_continuous(breaks = seq(0,12000,1000), labels = c("0", "1,000", "2,000", "3,000", "4,000", "5,000", "6,000", "7,000", "8,000", "9,000", "10,000", "11,000", "12,000")) +
+  ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}",  tip.length = 0.01, size = 4) +
+  geom_text(data = data.frame(NAME = c("SS2", "SS3", "FS")), aes(y = c(200,200,200), x = c(1,2,3), label = c("n=80", "n=51", "n=105")), size = 5) 
 
 # 2.3. Save results
 ggsave(p1.500K, 
-       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_exonCounts.tiff", bg = "white", dpi = 300, width = 10, height = 8)
+       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_exonCounts.tiff", bg = "white", dpi = 450, width = 7, height = 6)
 
 # 3. General Statistics
 summaryPlots(filter(mydata, DEPTH == 500000), title = "HEK_96w_SUMMARY", mycols = c("FS - 25 µL" = "#E41A1C",
@@ -367,7 +358,7 @@ p.intron.hek <- right_join(resqc, select(mydata %>% filter(DEPTH == "500000"), I
   ylab("Read Tags (%)") 
 
 ggsave(p.intron.hek, 
-       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_introns.tiff", bg = "white", dpi = 300, width = 6, height = 10)
+       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_introns.tiff", bg = "white", dpi = 450, height = 6, width = 10)
 
 # 5. Gene counts - downsampling
 
@@ -398,7 +389,7 @@ p2 <- mydata.down %>%
                                "SSsc" = "#984EA3")) + 
   scale_y_continuous(breaks = seq(0,12000,1000)) +
   scale_x_continuous(breaks = c(5000, 10000,20000,40000,50000,75000,100000,125000,250000,375000,500000), labels = c(c("", "", "20K","","50K","75K","100K", "125K","250K","375K","500K"))) +
-  ylab("Expressed Genes") + 
+  ylab("Genes Detected") + 
   xlab("Downsampled Reads") +
   theme_cowplot() +
   theme(legend.title = element_blank(),
@@ -409,7 +400,7 @@ p2 <- mydata.down %>%
         legend.text = element_text(size = 14)) 
 
 ggsave(p2, 
-       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_exonCounts.downsampling.tiff", bg = "white", dpi = 300, width = 10, height = 6)
+       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_exonCounts.downsampling.tiff", bg = "white", dpi = 450, width = 10, height = 6)
 
 
 # 6. Gene diversity 
@@ -464,7 +455,7 @@ if(!file.exists("/home/vincent.hahaut/data_storage/REFERENCES/hsap_fastsmart/REF
 
 # 6.2. Resampling
 
-if(file.exists("/home/vincent.hahaut/Desktop/gene.diversity.rds")){
+if(!file.exists("/home/vincent.hahaut/Desktop/gene.diversity.rds")){
   
   # 6.2.1. Build a samplesheet 
   # Contains the information related to the cells to resample (unique ID, depth, group)
@@ -673,36 +664,29 @@ test <- pivot_longer(overlaps.res, names_to = "CATEGORY", values_to = "nGenes", 
 
 # 8.2. Statistical test
 shapiro.test(test$nGenes)
-dunn.test::dunn.test(test$nGenes, test$CATEGORY)
 
-signif <- data_frame(
-  x = c(1,1,1,
-        2,2,
-        3),
-  xend = c(2,3,4,
-           3,4,
-           4),
-  y = seq(13500,13500+5*125,125),
-  label = rep("***", 6)
-)
+p.signif <- test %>% 
+  rstatix::dunn_test(nGenes ~ GROUP) %>%
+  rstatix::add_y_position(fun = "max", scales = "free") %>%
+  mutate(p.adj.signif = formatC(p.adj, format = "e", digits = 2))
 
 # 8.3. Visualize
 p.diversity <- ggplot() +
   geom_hline(yintercept = seq(11000,13500,1000), linetype = "dashed", color ="darkgrey") +
   geom_violin(data = test, aes(x = GROUP, y = nGenes, fill = GROUP)) +
   geom_boxplot(data = test, aes(x = GROUP, y = nGenes, fill = GROUP), width = 0.1) +
+  ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}",  tip.length = 0.01, size = 4) +
   theme_cowplot(font_size = 20) +
   theme(legend.position = "none", axis.text.x = element_text(size = 14)) +
   xlab("") +
+  scale_y_continuous(breaks = seq(11000,13500,1000)) +
   ylab("Gene Diversity") +
-  geom_text(data = signif, aes(x = (x+xend)/2, y = y+10, label = label), size = 7) +
-  geom_segment(data = signif, aes(x = x, xend = xend, y = y,  yend = y)) +
   scale_fill_manual(values = c("FS - 25 µL" = "#E41A1C",
                                "SS2" = "#377EB8",
                                "FS - 5 µL" = "#FF850D",
                                "SS3" = "#4DAF4A",
                                "SSsc" = "#984EA3")) 
-ggsave(p.diversity, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_diversity.tiff", width = 6, height = 6, dpi= 300, bg = "white")
+ggsave(p.diversity, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_diversity.tiff", width = 6, height = 6, dpi= 450, bg = "white")
 
 # 9. Gene types
 
@@ -725,24 +709,17 @@ test <- genecontent.res %>%
 # Add the info required to display these results
 p.signif <- test %>%
   group_by(gene_type) %>%
-  rstatix::dunn_test(perc ~ GROUP, p.adjust.method = "bonferroni") %>%
-  left_join(test %>% group_by(gene_type) %>% summarise(m = max(n)*1.05), by = "gene_type") %>%
-  mutate(p.signif = ifelse(p.adj.signif == "****", "***", p.adj.signif),
-         x = match(group1, unique(levels(factor(test$GROUP)))), 
-         xend = match(group2, unique(levels(factor(test$GROUP))))) %>%
-  group_by(gene_type) %>%
-  mutate(y = ifelse(gene_type == "Protein Coding",
-                    seq(unique(m), unique(m)+((unique(m)*0.01)*5), by = unique(m)*0.01),
-                    seq(unique(m), unique(m)+((unique(m)*0.03)*5), by = unique(m)*0.03))) %>%
-  ungroup() %>%
-  filter(p.signif != "ns") 
+  rstatix::dunn_test(n ~ GROUP, p.adjust.method = "bonferroni") %>%
+  filter(p.adj < 0.05) %>%
+  rstatix::add_xy_position(fun = "max", scales = "free_y") %>%
+  mutate(p.adj.signif = formatC(p.adj, format = "e", digits = 2))
+
 
 # 9.3. Visualize results
 p.gene.content <- ggplot() +
   geom_violin(data = test, aes(x = GROUP, y = n, fill = GROUP)) +
   geom_boxplot(data = test, aes(x = GROUP, y = n, fill = GROUP), width = 0.1, position = position_dodge(0.9)) +
   xlab("") +
-  ylab("Expressed Genes") +
   theme_bw(base_size = 24) +
   theme(legend.position = "none",
         legend.text = element_text(size = 18),
@@ -754,12 +731,11 @@ p.gene.content <- ggplot() +
                                "FS - 5 µL (Miniaturized)" = "#FF850D",
                                "SS3" = "#4DAF4A",
                                "SSsc" = "#984EA3")) + 
-  ylab("Detected Genes") +
-  geom_segment(data = p.signif, aes(x = group1, xend = group2, y = y, yend = y)) +
-  geom_text(data = p.signif, aes(x = (x+xend)/2, y = y, label = p.signif), size = 5) +
+  ylab("Genes Detected") +
+  ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}",  tip.length = 0.01, size = 4) +
   facet_wrap("gene_type", ncol = 2, scales = "free") 
 
-ggsave(p.gene.content, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_geneContent.tiff"), dpi = 300, height = 12, width = 8)
+ggsave(p.gene.content, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_geneContent.tiff"), dpi = 450, height = 16, width = 12)
 
 
 
@@ -800,55 +776,7 @@ p.cover <- ggplot(mycover, aes(x = as.numeric(Percentile), color = as.factor(NAM
         axis.title = element_text(size = 24),
         legend.position = "none")
 
-ggsave(p.cover, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_geneBodyCoverage.tiff"), bg = "white", dpi = 200, height = 6, width = 8)
-
-
-# 11. Read GC content
-# Not used in the final manuscript - complicated to read
-
-# 11.1. Get the expressed genes
-# >2 cells, >0 reads
-HEK.expressed.genes <- row.names(sce)[rowSums(counts(sce[,colnames(sce) %in% paste0("X", mydata$ID, "_500000_1")]) > 0) >= 3]
-
-# 11.2. Get their associated GC contents
-gc.perc <- read.table(file="/home/vincent.hahaut/data_storage/REFERENCES/hsap_fastsmart/REFERENCE/GTF/gencode.v34.exon.GC_lengths.tsv", header = T, sep="\t")
-gc.mean <- 100*mean(gc.perc$GC[gc.perc$gene_name %in% HEK.expressed.genes])
-
-gc.perc <- GC.log %>%
-  right_join(
-    select(mydata %>% filter(DEPTH == 500000), ID, NAME), by = "ID") %>%
-  group_by(ID) %>%
-  mutate(total = sum(read_count),
-         perc = 100*read_count/unique(total)) %>%
-  ungroup() %>%
-  distinct()
-
-# 11.3. Visualize results
-GC.proportion <- ggplot() +
-  geom_hline(yintercept = 0, linetype = "dotted") + 
-  geom_vline(xintercept = gc.mean, linetype = "dashed", color = "red") + 
-  geom_smooth(data = gc.perc, aes(y = perc, x = `GC%`, color = NAME, fill = NAME), 
-              size = 1.5, alpha = 0.15) +
-  theme_cowplot(font_size = 24) +
-  theme(legend.position = "bottom",
-        legend.title = element_blank(),
-        panel.background = element_rect(fill = "white"),
-        plot.background = element_rect(fill = "white")) +
-  xlab("GC (%)") +
-  ylab("Mapped Reads (%)") +
-  scale_fill_manual(values = c("FS - 25 µL" = "#E41A1C",
-                               "SS2" = "#377EB8",
-                               "FS - 5 µL (Miniaturized)" = "#FF850D",
-                               "SS3" = "#4DAF4A",
-                               "SSsc" = "#984EA3")) +
-  scale_color_manual(values = c("FS - 25 µL" = colorspace::darken("#E41A1C", 0.1),
-                                "SS2" = colorspace::darken("#377EB8", 0.1),
-                                "FS - 5 µL (Miniaturized)" = colorspace::darken("#FF850D", 0.1),
-                                "SS3" = colorspace::darken("#4DAF4A", 0.1),
-                                "SSsc" = colorspace::darken("#984EA3", 0.1)))
-
-ggsave(GC.proportion, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_main_GCprop.tiff", dpi = 300, height = 8, width = 10, bg = "white")
-
+ggsave(p.cover, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_geneBodyCoverage.tiff"), bg = "white", dpi = 450, height = 6, width = 8)
 
 
 # 12. Gene diversity - GC content / length
@@ -858,21 +786,21 @@ ggsave(GC.proportion, filename = "/home/vincent.hahaut/data_storage/FS_intermedi
 # 12.1.1. Statistical Significance
 test <- gc.expressed.genes %>% 
   filter(DEPTH == 500000) %>%
-  mutate(GROUP = ifelse(GROUP == "FS - 5 µL (Miniaturized)", "F", GROUP)) %>%
-  mutate(GROUP = factor(GROUP, levels = c("FS - 25 µL", "F", "SS2", "SS3"))) 
+  mutate(GROUP = ifelse(GROUP == "FS - 5 µL (Miniaturized)", "F", GROUP),
+         GROUP = factor(GROUP, levels = c("FS - 25 µL", "F", "SS2", "SS3")),
+         m.gc = 100*m.gc)
 
 p.signif <- rstatix::dunn_test(data = test, m.gc ~ GROUP, p.adjust.method = "bonferroni") %>%
-  mutate(p.signif = ifelse(p.adj.signif == "****", "***", p.adj.signif),
-         x = match(group1, unique(levels(factor(test$GROUP)))), 
-         xend = match(group2, unique(levels(factor(test$GROUP)))),
-         y = seq(54.5,54.5+0.3*5,0.3))
+  filter(p.adj < 0.05) %>%
+  rstatix::add_xy_position(fun = "max", scales = "free_y") %>%
+  mutate(p.adj.signif = formatC(p.adj, format = "e", digits = 2))
 
 # 12.1.2. Visualize
 p.GC <- ggplot() + 
   geom_hline(yintercept = seq(45,54,1), linetype = "dashed", color = "darkgrey") +
   scale_y_continuous(breaks = seq(45,54,1)) +
-  geom_violin(data = test, aes(x = GROUP, y = 100*m.gc, fill = GROUP)) + 
-  geom_boxplot(data = test, aes(x = GROUP, y = 100*m.gc, fill = GROUP), width = 0.1) +
+  geom_violin(data = test, aes(x = GROUP, y = m.gc, fill = GROUP)) + 
+  geom_boxplot(data = test, aes(x = GROUP, y = m.gc, fill = GROUP), width = 0.1) +
   scale_fill_manual(values = c("FS - 25 µL" = "#E41A1C",
                                "SS2" = "#377EB8",
                                "F" = "#FF850D",
@@ -883,8 +811,7 @@ p.GC <- ggplot() +
   xlab("") +
   theme_cowplot(font_size = 24) +
   theme(legend.position = "none") + 
-  geom_segment(data = p.signif, aes(x = group1, xend = group2, y = y, yend = y)) +
-  geom_text(data = p.signif, aes(x = (x+xend)/2, y = y+0.05, label = p.signif), size = 7) 
+  ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}",  tip.length = 0.01, size = 4) 
 
 # 12.2. Gene length
 
@@ -896,16 +823,13 @@ test <- gc.expressed.genes %>%
   filter(m.l < quantile(m.l, .999)) 
 
 p.signif <- rstatix::dunn_test(data = test, m.l ~ GROUP, p.adjust.method = "bonferroni") %>%
-  # To fit dunn's test results
-  filter(p.adj.signif != "ns") %>%
-  mutate(p.signif = ifelse(p.adj.signif == "****", "***", p.adj.signif),
-         x = match(group1, unique(levels(factor(test$GROUP)))), 
-         xend = match(group2, unique(levels(factor(test$GROUP)))),
-         y = seq(5100,5100+75*3,75))
+  filter(p.adj < 0.05) %>%
+  rstatix::add_xy_position(fun = "max", scales = "free_y") %>%
+  mutate(p.adj.signif = formatC(p.adj, format = "e", digits = 2))
 
 # 12.2.2. Visualize
 p.Length <- ggplot() + 
-  geom_hline(yintercept = seq(2500,5000,500), linetype = "dashed", color = "darkgrey") +
+  geom_hline(yintercept = seq(2500,4500,500), linetype = "dashed", color = "darkgrey") +
   geom_violin(data = test, aes(x = GROUP, y = m.l, fill = GROUP)) + 
   geom_boxplot(data = test, aes(x = GROUP, y = m.l, fill = GROUP), width = 0.1) +
   scale_fill_manual(values = c("FS - 25 µL" = "#E41A1C",
@@ -916,13 +840,13 @@ p.Length <- ggplot() +
   theme(legend.position = "none") +
   ylab("Average Gene Length (bp)") +
   xlab("") +
+  scale_y_continuous(breaks = seq(2500,4500,500)) +
   theme_cowplot(font_size = 24) +
   theme(legend.position = "none") + 
-  geom_segment(data = p.signif, aes(x = group1, xend = group2, y = y, yend = y)) +
-  geom_text(data = p.signif, aes(x = (x+xend)/2, y = y+10, label = p.signif), size = 7) 
+  ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}",  tip.length = 0.01, size = 4) 
 
 
-ggsave(plot_grid(align = "v", p.GC + theme(legend.position = "none"), p.Length  + theme(legend.position = "none"), nrow = 2), filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_DE_explore.tiff", dpi = 300, height = 12, width = 6, bg = "white")
+ggsave(plot_grid(align = "v", p.GC + theme(legend.position = "none"), p.Length  + theme(legend.position = "none"), nrow = 2), filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_DE_explore.tiff", dpi = 450, height = 12, width = 6, bg = "white")
 
 # 13. Which gene types are gained with increasing sequencing depth ? 
 
@@ -964,49 +888,44 @@ ggsave(p.genetype.gained + theme(legend.position = "none"), filename = "/home/vi
 # DEPTH = 500K
 # Add groups
 # Select TPM >1 or TPM > 5
-med.isoforms <- sce.sal.500K.med[sce.sal.500K.med$ID %in% paste0(mydata$ID, "_500000_1"),] %>%
+med.isoforms <- sce.sal.500K.med %>%
+  filter(ID %in% paste0(mydata$ID, "_500000_1")) %>%
   tibble() %>%
   mutate(GROUP = case_when(
     grepl("309_dCTP3x|247_HEK_LV1", ID) ~ "FS - 5 µL",
-    grepl("^2_|^3_", ID) ~ "SS2",
-    grepl("^5_|^6_", ID) ~ "SS3",
-    grepl("^10_|^12_|^247_HEK_LV5", ID) ~ "FS - 25 µL")) %>%
+    grepl("^2_SS2|^3_SS2", ID) ~ "SS2",
+    grepl("^5_SS3|^6_SS3", ID) ~ "SS3",
+    grepl("^10_std|^12_std|^247_HEK_LV5", ID) ~ "FS - 25 µL")) %>%
+  filter(!is.na(GROUP)) %>%
   dplyr::select(GROUP, TPM_1, TPM_5) %>%
   pivot_longer(-GROUP) %>%
   mutate(name = ifelse(name == "TPM_1", "TPM > 1", "TPM > 5"))
 
 # 14.2. Compute statistical significance
-p.signif <- ggpubr::compare_means(value ~ GROUP, group.by = "name", data = med.isoforms, test.use = "wilcoxon.test", p.adjust.method = "bonferroni") %>%
-  tibble() %>%
-  dplyr::select(name, group1, group2, p.adj, p.signif) %>%
-  mutate(p.signif = case_when(p.adj < 0.05 & p.adj >= 0.005 ~ "*",
-                              p.adj < 0.005 & p.adj >= 0.0005 ~ "**",
-                              p.adj < 0.0005 ~ "***",
-                              p.adj >= 0.05 ~ "ns",
-  ),
-  y = ifelse(name == "TPM > 1",
-             seq(max(med.isoforms$value[med.isoforms$name == "TPM > 1"])*1.01, max(med.isoforms$value[med.isoforms$name == "TPM > 1"])*1.01 + 525*6, 525),
-             seq(max(med.isoforms$value[med.isoforms$name == "TPM > 5"])*1.01, max(med.isoforms$value[med.isoforms$name == "TPM > 5"])*1.01 + 350*6, 350)),
-  x = match(group1, levels(factor(med.isoforms$GROUP))),
-  xend = match(group2, levels(factor(med.isoforms$GROUP)))) %>%
-  filter(p.signif != "ns")
+p.signif <- med.isoforms %>%
+  group_by(name) %>%
+  rstatix::dunn_test(value ~ GROUP, p.adjust.method = "bonferroni") %>%
+  filter(p.adj < 0.05) %>%
+  rstatix::add_xy_position(fun = "max", scales = "free_y") %>%
+  mutate(p.adj.signif = formatC(p.adj, format = "e", digits = 2),
+         p.adj.signif = ifelse(p.adj.signif == "0.00e+00", "p<1e-100", paste0("p=", p.adj.signif)))
 
 # 14.3. Visualize results
 p.isoform.HEK <- ggplot() +
   geom_violin(data = med.isoforms, aes(x = GROUP, y = value, fill = GROUP)) +
   geom_boxplot(data = med.isoforms, aes(x = GROUP, y = value, fill = GROUP), width = 0.1) +
   theme_bw(base_size = 24) +
-  facet_wrap("name", scales = "free_y", ncol = 1) + 
-  geom_segment(data = p.signif, aes(x = group1, xend = group2, y = y, yend = y)) +
-  geom_text(data = p.signif, aes(x = (x+xend)/2, y = y+50, label = p.signif), size = 6) +
+  facet_wrap("name",  nrow = 1) + 
   theme(legend.position = "none", axis.text.x = element_text(size = 14)) +
+  ggpubr::stat_pvalue_manual(filter(p.signif, name == "TPM > 1"), label = "{p.adj.signif}",  step.increase = 0.01, tip.length = 0.01, size = 4) +
+  ggpubr::stat_pvalue_manual(filter(p.signif, name == "TPM > 5"),, label = "{p.adj.signif}",  step.increase = 0.03, tip.length = 0.01, size = 4) +
   xlab("") +
-  ylab("Detected Transcripts") +
+  ylab("Transcripts Detected") +
   scale_fill_manual(values = c("FS - 25 µL" = "#E41A1C",
                                "SS2" = "#377EB8",
                                "FS - 5 µL" = "#FF850D",
                                "SS3" = "#4DAF4A"))
-ggsave(p.isoform.HEK, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_isoforms.tiff", dpi = 300, height = 8, width = 6, bg = "white")
+ggsave(p.isoform.HEK, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_isoforms.tiff", dpi = 450, width = 10, height = 8, bg = "white")
 
 # 15. Gained genes against reference depth
 
@@ -1049,7 +968,7 @@ saturation <- mydata %>%
                                "SSsc" = "#984EA3")) +
   scale_x_continuous(breaks = c(5000, 10000,20000,40000,50000,75000,100000,125000,250000,375000,500000,625000,750000, 1000000, 1250000, 1500000), labels = c(c("", "", "","","50K","","100K", "","250K","375K","500K", "625K","750K","1000K","1250K", "1500K"))) +
   scale_y_continuous(breaks = seq(0,1.25,0.1)) +
-  ylab("Proportion of\nExpressed Genes") + 
+  ylab("Proportion of\nGenes Detected") + 
   xlab("Downsampled Reads") +
   theme_cowplot() +
   theme(legend.position = "none",
@@ -1058,10 +977,55 @@ saturation <- mydata %>%
         axis.title = element_text(size = 24),
         legend.text = element_text(size = 14)) 
 
-ggsave(saturation, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_saturation.tiff", dpi = 300, height = 6, width = 16, bg = "white")
+ggsave(saturation, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_saturation.tiff", dpi = 450, height = 6, width = 16, bg = "white")
 
-ggsave(plot_grid(p2, saturation, nrow = 2), filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_saturation_downsampling.tiff", dpi = 300, height = 10, width = 11, bg = "white")
+ggsave(plot_grid(p2, saturation, nrow = 2), filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_saturation_downsampling.tiff", dpi = 500, height = 10, width = 11, bg = "white")
 
+```
+
+## Miniaturization
+
+```{r HEK mini, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
+
+mydata <- med.exon %>%
+  filter(PLATE == "247") %>%
+  mutate(NAME = case_when(
+    LYSIS_VOLUME == 0.5 ~ "FS - 2.5 µL",
+    grepl("LV1", ID)  ~ "FS - 5 µL",
+    grepl("LV5", ID)  ~ "FS - 25 µL"),
+    NAME = factor(NAME, levels = c("FS - 2.5 µL", "FS - 5 µL", "FS - 25 µL")),
+    sce.ids = paste0(ID, "_500000_1")) %>%
+  filter(DEPTH == 500000, as.numeric(P_too_short_read) < 25)
+
+# 2. Gene Counts
+
+# 2.1. Statistical comparison between groups
+
+kruskal.test(data = mydata, count_0 ~ NAME)
+
+# 2.2. Display results
+p1.500K <- ggplot() +
+  geom_hline(yintercept = seq(0,12000,1000), linetype = "dotted", color = "darkgrey") +
+  geom_violin(data = mydata, aes(y = count_0, x = NAME, fill = NAME)) +
+  geom_boxplot(data = mydata, aes(y = count_0, x = NAME, fill = NAME), width = 0.1, position = position_dodge(width = 0.9)) +
+  scale_fill_manual(values = c("FS - 25 µL" = "#E41A1C",
+                               "FS - 5 µL" = "#FF850D",
+                               "FS - 2.5 µL" = "#fcdb03")) +
+  scale_y_continuous(breaks = seq(0,12000,1000)) +
+  ylab("Genes Detected") + 
+  xlab("") +
+  theme_cowplot(font_size = 28) +
+  theme(legend.title = element_blank(),
+        axis.text = element_text(size = 22), 
+        axis.title = element_text(size = 24),
+        legend.position = "none",
+        axis.text.x = element_blank(), axis.ticks.x = element_blank(),
+        legend.text = element_text(size = 22))  +
+  geom_text(data = data.frame(NAME = c("SS2", "SS3", "FS")), aes(y = c(200,200,200), x = c(1,2,3), label = c("n=27", "n=20", "n=23")), size = 5) 
+
+# 2.3. Save results
+ggsave(p1.500K, 
+       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_exonCounts_mini.tiff", bg = "white", dpi = 450, width = 7, height = 6)
 ```
 
 ## cDNA yields
@@ -1070,7 +1034,8 @@ ggsave(plot_grid(p2, saturation, nrow = 2), filename = "/home/vincent.hahaut/dat
 
 # 1. Load the cDNA yield information from paltes 2,3,5,6,10,12
 # Modify the names for plotting reasons
-yield <- read_tsv("/home/vincent.hahaut/data_storage/FS_intermediate_file/HEK_cDNAYield_19022021.txt") %>% 
+
+yield <- read_tsv("/home/vincent.hahaut/data_storage/transfer/Mendeley/cDNA Yields/FS_HEK_cDNAYield_19022021.txt") %>%
   mutate(
     fill = case_when(
       Method == "FS" & `Plate ID` == 12 ~ "FS-19c",
@@ -1100,7 +1065,7 @@ pA <- ggplot() +
   geom_text(aes(x = 2, label="n = 90"),  y = 0, stat='count', size=5) +
   geom_text(aes(x = 3, label="n = 94"),  y = 0, stat='count', size=5) 
 
-ggsave(pA, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_cDNA_yield.tiff", bg = "white", dpi = 300, height = 8, width = 6)
+ggsave(pA, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_cDNA_yield.tiff", bg = "white", dpi = 450, height = 8, width = 6)
 
 ```
 
@@ -1137,6 +1102,14 @@ expressedSet.genes <- sapply(c("SS2", "SS3", "FS"), function(x)
 expressedSet.genes <- intersect(intersect(expressedSet.genes$SS2, expressedSet.genes$SS3), expressedSet.genes$FS)
 sce.expressed <- expressedSet[row.names(expressedSet) %in% expressedSet.genes,]
 
+# Save
+newNames <- read_tsv("/home/vincent.hahaut/Desktop/fastqTransform.txt")
+newNames$OLD_FASTQ_ID <- str_replace_all(paste0("X", newNames$OLD_FASTQ_ID, "_500000_1"), "-", ".")
+
+colnames(expressedSet) <- newNames$FINAL_FASTQ_ID[match(colnames(expressedSet), newNames$OLD_FASTQ_ID)]
+
+write_rds(expressedSet, "/home/vincent.hahaut/data_storage/transfer/Mendeley/HEK_SS2_SS3_FS_500K.rds")
+
 # 5. Correlations
 corrs <- data_frame()
 for(j in unique(c("SS2", "SS3", "FS"))){
@@ -1157,14 +1130,14 @@ for(j in unique(c("SS2", "SS3", "FS"))){
 # 6. Compare tau (pairwise)
 shapiro.test(sample(corrs$tau, 4000, replace = FALSE))
 kruskal.test(data = corrs, tau ~ GROUP)
-FSA::dunnTest(tau ~ GROUP, data=corrs, method="bonferroni")      
 
-geomseg <- data_frame(NAME = c("SS2", "SS3", "FS"),
-                      x = c(1, 2, 3),
-                      xend = c(2, 3, 1),
-                      y = c(0.75,0.77,0.79),
-                      yend = c(0.75,0.77,0.79),
-                      lab = c("***", "***", "***"))
+# Add the info required to display these results
+p.signif <- corrs %>%
+  rstatix::dunn_test(tau ~ GROUP, p.adjust.method = "bonferroni") %>%
+  filter(p.adj < 0.05) %>%
+  rstatix::add_xy_position(fun = "max", scales = "free_y") %>%
+  mutate(p.adj.signif = formatC(p.adj, format = "e", digits = 2),
+         p.adj.signif = ifelse(p.adj.signif == "0.00e+00", "p<1e-100", paste0("p=", p.adj.signif)))
 
 # 7. Visualize results
 p6 <- corrs %>%
@@ -1179,12 +1152,11 @@ p6 <- corrs %>%
         axis.title = element_text(size = 24)) +
   xlab("") +
   ylab("Cell-to-Cell Correlation (tau)") +
-  geom_segment(data = geomseg, aes(x = x, xend = xend, y = y, yend = yend)) +
-  geom_text(data = geomseg, aes(y = y+0.002, x = (x+xend)/2, label = lab), size = 7) 
+  ggpubr::stat_pvalue_manual(p.signif, label = "{p.adj.signif}",  tip.length = 0.01, size = 4)
 
 
 ggsave(p6, 
-       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_kendallCorr.tiff", bg = "white", dpi = 300, width = 6, height = 8)
+       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_kendallCorr.tiff", bg = "white", dpi = 450, width = 5, height = 6)
 ```
 
 # Miniaturize SS3 / SSsc 
@@ -1276,158 +1248,74 @@ mydata <- med.exon %>%
     PLATE %in% c("247") & grepl("LV1", ID) | PLATE == "309" & dCTP == "3.3" ~ "FS-19c",
     # PLATE == "230" & CYCLES == "8" & grepl(ID, pattern = "00625") ~ "FS-8c",
     # PLATE == "230" & CYCLES == "8" & grepl(ID, pattern = "0125") ~ "8c_0.125",
-    PLATE == "230" & CYCLES == "8" & grepl(ID, pattern = "0015625") ~ "FS-8c",
-    PLATE == "260" & CYCLES == "6" & grepl(ID, pattern = "0015625") ~ "FS-6c",
+    PLATE == "230" & CYCLES == "8" & grepl(ID, pattern = "0015625") ~ "FS-LA-8c",
+    PLATE == "260" & CYCLES == "6" & grepl(ID, pattern = "0015625") ~ "FS-LA-6c",
     # PLATE == "260" & CYCLES == "6" & grepl(ID, pattern = "00078125") ~ "FS-6c\nTn5:15.625nL",
     # PLATE == "258" & CYCLES == "4" & grepl(ID, pattern = "00039063") ~ "4c_0.0039063",
-    PLATE == "258" & CYCLES == "4" & grepl(ID, pattern = "0015625") ~ "FS-4c",
+    PLATE == "258" & CYCLES == "4" & grepl(ID, pattern = "0015625") ~ "FS-LA-4c",
     # PLATE == "258" & CYCLES == "4" & grepl(ID, pattern = "0078125") ~ "4c_0.078125",
     # PLATE == "261" & CYCLES == "10" & grepl(ID, pattern = "0015625") ~ "10c_0.015625",
-    PLATE == "261" & CYCLES == "10" & grepl(ID, pattern = "00625") ~ "FS-10c",
-    PLATE == "262" & CYCLES == "12" & grepl(ID, pattern = "01") ~ "FS-12c"
+    PLATE == "261" & CYCLES == "10" & grepl(ID, pattern = "00625") ~ "FS-LA-10c",
+    PLATE == "262" & CYCLES == "12" & grepl(ID, pattern = "01") ~ "FS-LA-12c"
     # PLATE == "262" & CYCLES == "12" & grepl(ID, pattern = "003125") ~ "12c_0.03125"
   )) %>%
   filter(!is.na(NAME), DEPTH == 250000) %>%
-  mutate(NAME = factor(as.factor(NAME), levels = c("FS-19c", "FS-12c", "FS-10c", "FS-4c", "FS-8c", "FS-6c")))
+  
+  mutate(NAME = factor(as.factor(NAME), levels = c("FS-19c", "FS-LA-12c", "FS-LA-10c", "FS-LA-8c", "FS-LA-6c", "FS-LA-4c")))
 write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
 
 # 2. Gene Counts
 
 ## COUNT > 0 
 
 # 2.1. Statistical Comparison
-mydata <- mutate(mydata, NAME = reorder(NAME, count_0, median)) 
-du <- FSA::dunnTest(mydata$NAME, x = mydata$count_0, method = "bonferroni")
-comparisons <- str_split(du$res$Comparison, " - ", simplify = TRUE)
-geomseg <- data_frame(
-  x = comparisons[,1],
-  xend = comparisons[,2],
-  padj = padj <- du$res$P.adj,
-  lab = case_when(padj < 0.05 & padj >= 0.005 ~ "*",
-                  padj < 0.005 & padj >= 0.0005 ~ "**",
-                  padj < 0.0005 ~ "***",
-                  padj >= 0.05 ~ "ns",
-  )) %>%
-  filter(lab != "ns") %>%
-  mutate(y = seq(12000, 12000+350*6, 350)) %>%
-  rowwise() %>%
-  mutate(x.mid = (which(levels(mydata$NAME) == xend) + which(levels(mydata$NAME) == x))/2)
+mydata.tmp <- mutate(mydata, NAME = reorder(NAME, count_0, median)) %>%
+  select(NAME, count_0, count_5) %>%
+  pivot_longer(-NAME, names_to = "threshold", values_to = "genes") %>%
+  mutate(NAME = factor(NAME, levels = c("FS-19c", "FS-LA-12c", "FS-LA-10c", "FS-LA-8c", "FS-LA-6c", "FS-LA-4c")),
+         threshold = ifelse(threshold == "count_0", "count > 0", "count > 5"))
+
+du <-  mydata.tmp %>%
+  group_by(threshold) %>%
+  rstatix::dunn_test(genes  ~ NAME , p.adjust.method = "bonferroni") %>%
+  filter(p.adj < 0.05) %>%
+  ungroup() %>%
+  rstatix::add_xy_position(fun = "max", scales = "free_y") %>%
+  mutate(p.adj.signif = formatC(p.adj, format = "e", digits = 2),
+         p.adj.signif = ifelse(p.adj.signif == "0.00e+00", "p<1e-100", paste0("p=", p.adj.signif)),
+         y.position = c(seq(12100, 12700,100), seq(12100, 13000,100)))
 
 # 2.2. Visualize
 p1 <- ggplot() +
-  geom_hline(yintercept = seq(0,12000,1000), linetype = "dotted", color = "darkgrey") +
-  geom_violin(data = mydata, aes(y = count_0, x = NAME, fill = NAME)) +
-  geom_boxplot(data = mydata, aes(y = count_0, x = NAME, fill = NAME), width = 0.1) +
-  scale_fill_manual(values = c("FS-4c" = "#FED976", 
-                               "FS-8c" = "#FEB24C", 
-                               "FS-6c" = "#FD8D3C", 
-                               "FS-10c" = "#FC4E2A", 
-                               "FS-12c" = "#E31A1C", 
+  geom_hline(yintercept = seq(1000,12000,1000), linetype = "dotted", color = "darkgrey") +
+  geom_violin(data = mydata.tmp, aes(y = genes, x = NAME, fill = NAME)) +
+  geom_boxplot(data = mydata.tmp, aes(y = genes, x = NAME, fill = NAME), width = 0.1) +
+  scale_fill_manual(values = c("FS-LA-4c" = "#FED976", 
+                               "FS-LA-8c" = "#FD8D3C", 
+                               "FS-LA-6c" = "#FEB24C", 
+                               "FS-LA-10c" = "#FC4E2A", 
+                               "FS-LA-12c" = "#E31A1C", 
                                "FS-19c" = "#B10026")) +
-  scale_y_continuous(breaks = seq(0,12000,1000)) +
-  ylab("Detected Genes") + 
+  ylim(c(500,17000)) +
+  scale_y_continuous(breaks = seq(1000,12000,2000), labels = c("1,000", "3,000", "5,000", "7,000", "9,000", "11,000")) +
+  ylab("Genes Detected") + 
   xlab("") +
   theme_cowplot() +
   theme(legend.position = "none",
+        strip.background = element_blank(),
+        strip.text = element_text(face = "bold", size = 22, hjust = 0),
         legend.title = element_blank(),
         axis.text.x = element_text(size = 18, angle = 45, hjust = 1), 
         axis.text.y = element_text(size = 18), 
         axis.title = element_text(size = 20)) +
-  geom_text(data = mydata, aes(x = NAME, label=paste0("n=", ..count..)), y = -150, stat='count', size=5) +
-  geom_segment(data = geomseg, aes(x = x, xend = xend, y = y, yend = y)) +
-  geom_text(data = geomseg, aes(x = x.mid, y = y+25, label=lab), size=6) 
+  facet_wrap("threshold", scales = "free_y") +
+  geom_text(data = mydata.tmp, aes(x = NAME, label=paste0("n=", ..count..)), y = 200, stat='count', size=5) +
+  ggpubr::stat_pvalue_manual(filter(du, threshold == "count > 0"), label = "{p.adj.signif}",  step.increase = 0.05, tip.length = 0.01, size = 3) +  
+  ggpubr::stat_pvalue_manual(filter(du, threshold == "count > 5"), label = "{p.adj.signif}",  step.increase = 0.05, tip.length = 0.01, size = 3) 
 
-## COUNT > 1
-
-# 2.3. Statistical Comparison
-mydata$NAME.simplified <- str_split(mydata$NAME, "\n", simplify = T)[,1]
-mydata <- mutate(mydata, NAME.simplified = reorder(NAME.simplified, count_1, median)) 
-du <- FSA::dunnTest(mydata$NAME.simplified, x = mydata$count_1, method = "bonferroni")
-comparisons <- str_split(du$res$Comparison, " - ", simplify = TRUE)
-geomseg <- data_frame(
-  x = comparisons[,1],
-  xend = comparisons[,2],
-  padj = padj <- du$res$P.adj,
-  lab = case_when(padj < 0.05 & padj >= 0.005 ~ "*",
-                  padj < 0.005 & padj >= 0.0005 ~ "**",
-                  padj < 0.0005 ~ "***",
-                  padj >= 0.05 ~ "ns",
-  )) %>%
-  filter(lab != "ns") %>%
-  mutate(y = seq(10000, 10000+300*8, 300)) %>%
-  rowwise() %>%
-  mutate(x.mid = (which(levels(mydata$NAME.simplified) == xend) + which(levels(mydata$NAME.simplified) == x))/2)
-
-# 2.4. Visualize
-p1.count1 <- mydata %>%
-  ggplot() +
-  geom_hline(yintercept = seq(0,10000,1000), linetype = "dotted", color = "darkgrey") +
-  geom_violin(data = mydata, aes(y = count_1, x = NAME.simplified, fill = NAME.simplified)) +
-  geom_boxplot(aes(y = count_1, x = NAME.simplified, fill = NAME.simplified), width = 0.1) +
-  scale_fill_manual(values = c("FS-4c" = "#FED976", 
-                               "FS-8c" = "#FEB24C", 
-                               "FS-6c" = "#FD8D3C", 
-                               "FS-10c" = "#FC4E2A", 
-                               "FS-12c" = "#E31A1C", 
-                               "FS-19c" = "#B10026")) +
-  scale_y_continuous(breaks = seq(0,10000,1000)) +
-  ylab("Detected Genes") + 
-  xlab("") +
-  theme_cowplot() +
-  theme(legend.position = "none",
-        legend.title = element_blank(),
-        axis.text.x = element_text(size = 18, angle = 45, hjust = 1), 
-        axis.text.y = element_text(size = 18), 
-        axis.title = element_text(size = 20)) +
-  geom_segment(data = geomseg, aes(x = x, xend = xend, y = y, yend = y)) +
-  geom_text(data = geomseg, aes(x = x.mid, y = y+25, label=lab), size=5.5) 
-
-## COUNT > 5
-
-# 2.5. Statistical Comparisons
-mydata <- mutate(mydata, NAME.simplified = reorder(NAME.simplified, count_5, median)) 
-du <- FSA::dunnTest(mydata$NAME.simplified, x = mydata$count_5, method = "bonferroni")
-comparisons <- str_split(du$res$Comparison, " - ", simplify = TRUE)
-geomseg <- data_frame(
-  x = comparisons[,1],
-  xend = comparisons[,2],
-  padj = padj <- du$res$P.adj,
-  lab = case_when(padj < 0.05 & padj >= 0.005 ~ "*",
-                  padj < 0.005 & padj >= 0.0005 ~ "**",
-                  padj < 0.0005 ~ "***",
-                  padj >= 0.05 ~ "ns",
-  )) %>%
-  filter(lab != "ns") %>%
-  mutate(y = seq(6000, 6000+200*9, 200)) %>%
-  rowwise() %>%
-  mutate(x.mid = (which(levels(mydata$NAME.simplified) == xend) + which(levels(mydata$NAME.simplified) == x))/2)
-
-# 2.6. Visualize
-p1.count5 <- mydata %>%
-  ggplot() +
-  geom_hline(yintercept = seq(0,6000,1000), linetype = "dotted", color = "darkgrey") +
-  geom_violin(data = mydata, aes(y = count_5, x = NAME.simplified, fill = NAME)) +
-  geom_boxplot(aes(y = count_5, x = NAME.simplified, fill = NAME.simplified), width = 0.1) +
-  scale_fill_manual(values = c("FS-4c" = "#FED976", 
-                               "FS-8c" = "#FEB24C", 
-                               "FS-6c" = "#FD8D3C", 
-                               "FS-10c" = "#FC4E2A", 
-                               "FS-12c" = "#E31A1C", 
-                               "FS-19c" = "#B10026")) +
-  scale_y_continuous(breaks = seq(0,6000,1000)) +
-  ylab("Detected Genes") + 
-  xlab("") +
-  theme_cowplot() +
-  theme(legend.position = "none",
-        legend.title = element_blank(),
-        axis.text.x = element_text(size = 18, angle = 45, hjust = 1), 
-        axis.text.y = element_text(size = 18), 
-        axis.title = element_text(size = 20)) +
-  geom_segment(data = geomseg, aes(x = x, xend = xend, y = y, yend = y)) +
-  geom_text(data = geomseg, aes(x = x.mid, y = y+25, label=lab), size=5.5) 
-
-ggsave(plot_grid(p1 + ggtitle("Count > 0"), p1.count1 + ggtitle("Count > 1"), p1.count5 + ggtitle("Count > 5"), nrow = 1), 
-       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_lowAmplificationCycles.reviewer.tiff", bg = "white", dpi = 300, width = 18, height = 6)
+ggsave(p1, 
+       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_lowAmplificationCycles.reviewer.tiff", bg = "white", dpi = 450, width = 12, height = 6)
 
 # 3. Gene-body Coverage
 
@@ -1448,18 +1336,18 @@ p.cover <- ggplot(mycover, aes(x = as.numeric(Percentile), color = as.factor(NAM
   geom_ribbon(aes(ymin = mean.c - sd.c, ymax = mean.c + sd.c), colour = NA) +
   geom_line(aes(y=mean.c), size = 1.25) +
   theme_cowplot(font_size = 24) +
-  scale_color_manual(values = c("FS-4c + Tn5:15.625nL" = "#FED976", 
-                                "FS-8c + Tn5:15.625nL" = "#FEB24C", 
-                                "FS-6c + Tn5:15.625nL" = "#FD8D3C", 
-                                "FS-10c + Tn5:62.5nL" = "#FC4E2A", 
-                                "FS-12c + Tn5:100nL" = "#E31A1C", 
-                                "FS-19c + Tn5:250nL" = "#B10026")) +
-  scale_fill_manual(values = c("FS-4c + Tn5:15.625nL" = alpha("#FED976", 0.15), 
-                               "FS-8c + Tn5:15.625nL" = alpha("#FEB24C", 0.15), 
-                               "FS-6c + Tn5:15.625nL" = alpha("#FD8D3C", 0.15), 
-                               "FS-10c + Tn5:62.5nL" = alpha("#FC4E2A", 0.15),  
-                               "FS-12c + Tn5:100nL" = alpha("#E31A1C", 0.15),  
-                               "FS-19c + Tn5:250nL" = alpha("#B10026", 0.15))) +
+  scale_color_manual(values = c("FS-LA-4c" = "#FED976", 
+                                "FS-LA-8c" = "#FD8D3C", 
+                                "FS-LA-6c" = "#FEB24C", 
+                                "FS-LA-10c" = "#FC4E2A", 
+                                "FS-LA-12c" = "#E31A1C", 
+                                "FS-19c" = "#B10026")) +
+  scale_fill_manual(values = c("FS-LA-4c" = alpha("#FED976", 0.15), 
+                               "FS-LA-8c" = alpha("#FEB24C", 0.15), 
+                               "FS-LA-6c" = alpha("#FD8D3C", 0.15), 
+                               "FS-LA-10c" = alpha("#FC4E2A", 0.15),  
+                               "FS-LA-12c" = alpha("#E31A1C", 0.15),  
+                               "FS-19c" = alpha("#B10026", 0.15))) +
   xlab("Gene Body Percentile (5'->3')") +
   ylab("Percentage Coverage") +
   theme(legend.title = element_blank(),
@@ -1468,7 +1356,7 @@ p.cover <- ggplot(mycover, aes(x = as.numeric(Percentile), color = as.factor(NAM
   theme(strip.background = element_blank(),
         strip.text = element_text(face = "bold"))
 
-ggsave(p.cover, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_LOWAMP_COVERAGE.tiff"), dpi = 200, height = 8, bg = "white", width = 12)
+ggsave(p.cover, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_LOWAMP_COVERAGE.tiff"), dpi = 450, height = 8, bg = "white", width = 12)
 
 
 # 4. Gene Distribution (read tags)
@@ -1480,23 +1368,23 @@ p2 <- filter(resqc, ID %in% mydata$ID) %>%
   gather(key, val, -ID, -totalReadTags) %>%
   mutate(perc = 100*val/totalReadTags,
          GROUP = case_when(
-           grepl("247_HEK_LV1", ID) ~ "FS-19c",
-           grepl(ID, pattern = "8c_0015625") ~ "FS-8c",
-           grepl(ID, pattern = "6c_0015625") ~ "FS-6c",
-           grepl(ID, pattern = "4c_0015625") ~ "FS-4c",
-           grepl(ID, pattern = "10c_00625") ~ "FS-10c",
-           grepl(ID, pattern = "12c_01") ~ "FS-12c")) %>%
-  mutate(GROUP = factor(as.factor(GROUP), levels = c("FS-19c", "FS-12c", "FS-10c", "FS-8c", "FS-6c", "FS-4c")),
+           grepl("247_HEK_LV1|^309_", ID) ~ "FS-19c",
+           grepl(ID, pattern = "8c_0015625") ~ "FS-LA-8c",
+           grepl(ID, pattern = "6c_0015625") ~ "FS-LA-6c",
+           grepl(ID, pattern = "4c_0015625") ~ "FS-LA-4c",
+           grepl(ID, pattern = "10c_00625") ~ "FS-LA-10c",
+           grepl(ID, pattern = "12c_01") ~ "FS-LA-12c")) %>%
+  mutate(GROUP = factor(as.factor(GROUP), levels = c("FS-19c", "FS-LA-12c", "FS-LA-10c", "FS-LA-8c", "FS-LA-6c", "FS-LA-4c")),
          key = factor(as.factor(key), levels = c("TES_down_10kb", "TSS_up_10kb", "UTR3_Exons", "UTR5_Exons", "Intergenic", "Introns", "CDS_Exons"))) %>%
   # Bring little info to the picture
   filter(!key %in% c("TES_down_10kb", "TSS_up_10kb")) %>%
   ggplot(aes(y = GROUP, x = perc, fill = GROUP)) +
   geom_boxplot() +
-  scale_fill_manual(values = c("FS-4c" = "#FED976", 
-                               "FS-6c" = "#FEB24C", 
-                               "FS-8c" = "#FD8D3C", 
-                               "FS-10c" = "#FC4E2A", 
-                               "FS-12c" = "#E31A1C", 
+  scale_fill_manual(values = c("FS-LA-4c" = "#FED976", 
+                               "FS-LA-6c" = "#FEB24C", 
+                               "FS-LA-8c" = "#FD8D3C", 
+                               "FS-LA-10c" = "#FC4E2A", 
+                               "FS-LA-12c" = "#E31A1C", 
                                "FS-19c" = "#B10026")) +
   theme_cowplot(font_size = 18) +
   facet_wrap("key", scales = "free_x", nrow = 1) +
@@ -1509,7 +1397,7 @@ p2 <- filter(resqc, ID %in% mydata$ID) %>%
   xlab("Read Tags (%)") 
 
 ggsave(p2, bg = "white",
-       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_lowAmplificationCycles_RESQC.tiff", dpi = 300, width = 12, height = 6)
+       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_lowAmplificationCycles_RESQC.tiff", dpi = 450, width = 12, height = 6)
 
 # 4.2. Lines / Dots per PCR cycles
 resqc.tmp <- filter(resqc, ID %in% mydata$ID) %>%
@@ -1520,72 +1408,78 @@ resqc.tmp <- filter(resqc, ID %in% mydata$ID) %>%
   mutate(perc = 100*val/totalReadTags,
          GROUP = case_when(
            grepl("247_HEK_LV1|309_dCTP3x", ID) ~ "FS-19c",
-           grepl(ID, pattern = "8c_0015625") ~ "FS-8c",
-           grepl(ID, pattern = "6c_0015625") ~ "FS-6c",
-           grepl(ID, pattern = "4c_0015625") ~ "FS-4c",
-           grepl(ID, pattern = "10c_00625") ~ "FS-10c",
-           grepl(ID, pattern = "12c_01") ~ "FS-12c")) %>%
-  mutate(GROUP = factor(as.factor(GROUP), levels = c("FS-19c", "FS-12c", "FS-10c", "FS-8c", "FS-6c", "FS-4c")),
-         key = factor(as.factor(key), levels = c("CDS_Exons", "Intergenic", "Introns"))) %>%
-  group_by(GROUP, key) %>%
-  summarise(m = mean(perc),
-            ymin = mean(perc) - sd(perc),
-            ymax = mean(perc) + sd(perc)) %>%
-  ungroup() 
+           grepl(ID, pattern = "8c_0015625") ~ "FS-LA-8c",
+           grepl(ID, pattern = "6c_0015625") ~ "FS-LA-6c",
+           grepl(ID, pattern = "4c_0015625") ~ "FS-LA-4c",
+           grepl(ID, pattern = "10c_00625") ~ "FS-LA-10c",
+           grepl(ID, pattern = "12c_01") ~ "FS-LA-12c")) %>%
+  mutate(GROUP = factor(as.factor(GROUP), levels = c("FS-19c", "FS-LA-12c", "FS-LA-10c", "FS-LA-8c", "FS-LA-6c", "FS-LA-4c")),
+         key = factor(as.factor(key), levels = c("CDS_Exons", "Intergenic", "Introns"))) 
 
-
-p2 <- ggplot(data = resqc.tmp) +
+p2 <-     ggplot(data = resqc.tmp, aes(x = GROUP, y = perc, fill = key)) +
   geom_hline(yintercept = seq(0,65,5), linetype = "dotted", color = "darkgrey")+
-  geom_line(aes(x = GROUP, y = m, color = key, group = key), size = 1.75, position= position_dodge(0.1)) +
-  geom_linerange(aes(x = GROUP, ymin = ymin, ymax = ymax, color = key), size = 1, position= position_dodge(0.1)) +
-  geom_point(aes(x = GROUP, y = m, color = key, fill = key), colour="black",pch=21, size = 3, position= position_dodge(0.1)) +
+  stat_summary(
+    fun.y = median,
+    geom = 'line',
+    size = 1.5,
+    aes(group = key, colour = key),
+    position = position_dodge(width = 0.9) #this has to be added
+  ) +
+  geom_boxplot(position = position_dodge(width = 0.9), width = 0.5) +
   scale_y_continuous(breaks = seq(0,70, 10)) +
-  theme_cowplot(font_size = 18) +
-  theme(legend.position = "bottom", 
-        legend.title = element_blank(),
-        axis.text = element_text(size = 16),
-        legend.text = element_text(size = 18)) +
+  theme_cowplot(font_size = 24) +
+  theme(legend.title = element_blank(),
+        axis.text.x = element_text(size = 24, angle = 45, hjust = 1),
+        legend.position = "none") +
   scale_color_brewer(palette = "Dark2") +
   scale_fill_brewer(palette = "Dark2") +
   ylab("Read Tags (%)") +
-  xlab("") 
+  xlab("") +
+  ggtitle("Read Distribution")
+
 
 ggsave(p2, 
-       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_lowAmplificationCycles8CYCLES_RESQC.tiff", dpi = 300, bg = "white", width = 8, height = 6)
+       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_lowAmplificationCycles8CYCLES_RESQC.tiff", dpi = 450, bg = "white", width = 8, height = 6)
 
 
 # 5. STAR Mapping  Statistics
 p3 <- mydata %>%
   select(NAME, P_uniquely_mapped_reads, P_multiple_Loci, P_too_short_read) %>%
   gather(key, val, -NAME) %>%
-  mutate(NAME = factor(as.factor(NAME), levels = rev(c("FS-4c", "FS-6c", "FS-8c", "FS-10c", "FS-12c", "FS-19c"))),
+  mutate(NAME = factor(as.factor(NAME), levels = rev(c("FS-LA-4c", "FS-LA-6c", "FS-LA-8c", "FS-LA-10c", "FS-LA-12c", "FS-19c"))),
          key = case_when(key == "P_uniquely_mapped_reads" ~ "Uniquely Mapped", 
                          key == "P_multiple_Loci" ~ "Multi-Mapped", 
                          key == "P_too_short_read" ~ "Unmapped"),
          key = factor(as.factor(key), levels = c("Uniquely Mapped", "Multi-Mapped", "Unmapped")),
          FILL = paste(key, NAME)) %>%
   mutate(val = as.numeric(as.character(val))) %>%
-  ggplot(aes(x = NAME, y = val, fill = NAME)) +
-  geom_violin() +
-  geom_boxplot(width = 0.1) +
+  ggplot(aes(x = NAME, y = val, fill = key)) +
+  geom_hline(yintercept = seq(0,80, 10), linetype = "dotted", color = "darkgrey")+
+  stat_summary(
+    fun.y = median,
+    geom = 'line',
+    size = 1.5,
+    aes(group = key, colour = key),
+    position = position_dodge(width = 0.9) #this has to be added
+  ) +
+  geom_boxplot(position = position_dodge(width = 0.9), width = 0.5) +
+  scale_y_continuous(breaks = seq(0,80, 10)) +
+  theme_cowplot(font_size = 24) +
+  theme(legend.title = element_blank(),
+        axis.text.x = element_text(size = 24, angle = 45, hjust = 1),
+        legend.position = "none") +
+  scale_color_manual(values = c("#E7298A", "#66A61E", "#E6AB02")) +
+  scale_fill_manual(values = c("#E7298A", "#66A61E", "#E6AB02")) +
   ylab("Reads (%)") +
   xlab("") +
-  facet_wrap("key", nrow = 1, scales = "free_y") +
-  theme_cowplot(font_size = 28) +
-  theme(legend.position = "none",
-        rect = element_rect(size = 0.75, color = "black"), 
-        panel.border = element_rect(size = 0.75, color = "black"), 
-        axis.text.x = element_text(size = 22, angle = 45, hjust = 1),
-        strip.text = element_text(size = 24, face = "bold"),
-        panel.grid.major.y = element_line(linetype = "dotted", color = "darkgrey", size = 0.5),
-        axis.line.y.right = element_line(color = "black", linetype = "solid", size = 1)) +
-  scale_fill_brewer(palette = "YlOrRd", direction = -1)
+  ggtitle("Mapping Statistics")
+
 
 ggsave(p3, 
-       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_lowAmplificationCycles_STAR.tiff", bg = "white", dpi = 300, width = 16, height = 8)
+       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_lowAmplificationCycles_STAR.tiff", bg = "white", dpi = 450, width =  8, height = 6)
 
-ggsave(plot_grid(p2, p3, rel_widths = c(0.3, 0.7)), bg = "white",
-       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_lowAmplificationCycles_STAR_COMBINED.tiff", dpi = 300, width = 24, height = 8)
+ggsave(plot_grid(p2, p3, nrow = 2), bg = "white",
+       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_lowAmplificationCycles_STAR_COMBINED.tiff", dpi = 450, width = 8, height = 10)
 
 # 6. Gene type content
 
@@ -1626,7 +1520,7 @@ p.LA.content <- counts(mysce) %>%
   group_by(NAME, gene_type) %>% 
   summarise(prop = 100*n()/unique(total)) %>%
   ungroup() %>%
-  mutate(NAME = factor(NAME, levels = c("FS-4c", 'FS-6c', 'FS-8c', 'FS-10c', 'FS-12c', 'FS-19c'))) %>%
+  mutate(NAME = factor(NAME, levels = c("FS-LA-4c", 'FS-LA-6c', 'FS-LA-8c', 'FS-LA-10c', 'FS-LA-12c', 'FS-19c'))) %>%
   # 6.3.6. Visualize results
   ggplot(aes(y = prop, x = NAME, fill = gene_type)) + 
   geom_hline(yintercept = seq(0,100,010), linetype = "dashed", color = "darkgrey") +
@@ -1654,18 +1548,18 @@ mydata <- med.exon %>%
   filter(PLATE %in% c("309", "247", "230", "260", "261", "262", "258")) %>%
   mutate(NAME = case_when(
     PLATE %in% c("247") & grepl("LV1", ID) | PLATE == "309" & dCTP == "3.3" ~ "FS-19c\n250 nL",
-    PLATE == "230" & CYCLES == "8" & grepl(ID, pattern = "00625") ~ "8c\n62.5 nL",
-    PLATE == "230" & CYCLES == "8" & grepl(ID, pattern = "0125") ~ "8c\n125 nL",
-    PLATE == "230" & CYCLES == "8" & grepl(ID, pattern = "0015625") ~ "8c\n1.56 nL",
-    PLATE == "260" & CYCLES == "6" & grepl(ID, pattern = "00078125") ~ "6c\n7.81 nL",
-    PLATE == "260" & CYCLES == "6" & grepl(ID, pattern = "0015625") ~ "6c\n15.63 nL",
-    PLATE == "258" & CYCLES == "4" & grepl(ID, pattern = "00039063") ~ "4c\n3.91 nL",
-    PLATE == "258" & CYCLES == "4" & grepl(ID, pattern = "0015625") ~ "4c\n15.63 nL",
-    PLATE == "258" & CYCLES == "4" & grepl(ID, pattern = "0078125") ~ "4c\n78.13 nL",
-    PLATE == "261" & CYCLES == "10" & grepl(ID, pattern = "0015625") ~ "10c\n15.63 nL",
-    PLATE == "261" & CYCLES == "10" & grepl(ID, pattern = "00625") ~ "10c\n62.5 nL",
-    PLATE == "262" & CYCLES == "12" & grepl(ID, pattern = "01") ~ "12c\n100 nL",
-    PLATE == "262" & CYCLES == "12" & grepl(ID, pattern = "003125") ~ "12c\n31.25 nL")) %>%
+    PLATE == "230" & CYCLES == "8" & grepl(ID, pattern = "00625") ~ "FS-LA-8c\n62.5 nL",
+    PLATE == "230" & CYCLES == "8" & grepl(ID, pattern = "0125") ~ "FS-LA-8c\n125 nL",
+    PLATE == "230" & CYCLES == "8" & grepl(ID, pattern = "0015625") ~ "FS-LA-8c\n1.56 nL",
+    PLATE == "260" & CYCLES == "6" & grepl(ID, pattern = "00078125") ~ "FS-LA-6c\n7.81 nL",
+    PLATE == "260" & CYCLES == "6" & grepl(ID, pattern = "0015625") ~ "FS-LA-6c\n15.63 nL",
+    PLATE == "258" & CYCLES == "4" & grepl(ID, pattern = "00039063") ~ "FS-LA-4c\n3.91 nL",
+    PLATE == "258" & CYCLES == "4" & grepl(ID, pattern = "0015625") ~ "FS-LA-4c\n15.63 nL",
+    PLATE == "258" & CYCLES == "4" & grepl(ID, pattern = "0078125") ~ "FS-LA-4c\n78.13 nL",
+    PLATE == "261" & CYCLES == "10" & grepl(ID, pattern = "0015625") ~ "FS-LA-10c\n15.63 nL",
+    PLATE == "261" & CYCLES == "10" & grepl(ID, pattern = "00625") ~ "FS-LA-10c\n62.5 nL",
+    PLATE == "262" & CYCLES == "12" & grepl(ID, pattern = "01") ~ "FS-LA-12c\n100 nL",
+    PLATE == "262" & CYCLES == "12" & grepl(ID, pattern = "003125") ~ "FS-LA-12c\n31.25 nL")) %>%
   filter(!is.na(NAME), DEPTH == 250000) %>%
   left_join(resqc, by = "ID") %>%
   mutate(TN5 = ifelse(is.na(TN5), 0.250, TN5))
@@ -1682,54 +1576,37 @@ for(cycle in c(4,6,8,10,12)){
   
   mydata.tmp <- filter(mydata, CYCLES %in% c(cycle, 19))
   
-  test <- rstatix::dunn_test(data = mydata.tmp, count_0 ~ NAME, p.adjust.method = "bonferroni")
-    
+  p.signif <- rstatix::dunn_test(data = mydata.tmp, count_0 ~ NAME, p.adjust.method = "bonferroni") %>%
+  filter(p.adj < 0.05) %>% 
+  rstatix::add_y_position(fun = "max", scales = "free") %>%
+  mutate(p.adj.signif = formatC(p.adj, format = "e", digits = 2))
+
   p.gene <- ggplot() +
     geom_hline(yintercept = seq(0,12000,1000), linetype = "dotted", color = "darkgrey") +
     geom_violin(data = mydata.tmp, aes(y = count_0, x = NAME, fill = reorder(NAME, count_0, median)), width = 0.65) +
     geom_boxplot(data = mydata.tmp, aes(y = count_0, x = NAME, fill = reorder(NAME, count_0, median)), width = 0.1) +
     scale_fill_manual(values = c("FS-19c\n250 nL" = "#B10026",
-                                 "8c\n62.5 nL" = "#41B6C4", 
-                                 "8c\n125 nL" = "#225EA8", 
-                                 "8c\n1.56 nL" = "#EDF8B1", 
-                                 "6c\n7.81 nL" = "#EDF8B1", 
-                                 "6c\n15.63 nL" = "#41B6C4", 
-                                 "4c\n3.91 nL" = "#EDF8B1",
-                                 "4c\n15.63 nL" = "#41B6C4",
-                                 "4c\n78.13 nL" = "#225EA8",
-                                 "10c\n15.63 nL" = "#EDF8B1", 
-                                 "10c\n62.5 nL" = "#41B6C4", 
-                                 "12c\n100 nL" = "#41B6C4",
-                                 "12c\n31.25 nL" = "#EDF8B1")) +
+                                 "FS-LA-8c\n62.5 nL" = "#41B6C4", 
+                                 "FS-LA-8c\n125 nL" = "#225EA8", 
+                                 "FS-LA-8c\n1.56 nL" = "#EDF8B1", 
+                                 "FS-LA-6c\n7.81 nL" = "#EDF8B1", 
+                                 "FS-LA-6c\n15.63 nL" = "#41B6C4", 
+                                 "FS-LA-4c\n3.91 nL" = "#EDF8B1",
+                                 "FS-LA-4c\n15.63 nL" = "#41B6C4",
+                                 "FS-LA-4c\n78.13 nL" = "#225EA8",
+                                 "FS-LA-10c\n15.63 nL" = "#EDF8B1", 
+                                 "FS-LA-10c\n62.5 nL" = "#41B6C4", 
+                                 "FS-LA-12c\n100 nL" = "#41B6C4",
+                                 "FS-LA-12c\n31.25 nL" = "#EDF8B1")) +
     scale_y_continuous(breaks = seq(0,12000,1000)) +
     geom_text(data = mydata.tmp, aes(x = NAME, label=paste0("n = ", ..count..)), y = -150, stat='count', size=5) +
     ylab("Detected Genes") + 
     xlab("") +
     theme_cowplot(font_size = 20) +
     theme(legend.position = "none",
-          legend.title = element_blank()) 
-  
-  test <- filter(test, p.adj < 0.05)
-  if(nrow(test) > 0){
+          legend.title = element_blank()) +
+    ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}",  tip.length = 0.01, step.increase = 0.04, size = 4)
 
-    index <- 1:nrow(test)
-    
-    pos.stats <- test %>% mutate(
-      y.seg = max(mydata.tmp$count_0) + max(mydata.tmp$count_0)*(1.2*index/50),
-      y.lab = y.seg * 1.0005,
-      lab = case_when(p.adj < 0.05 & p.adj > 0.005 ~ "*",
-                      p.adj < 0.005 & p.adj > 0.0005 ~ "**",
-                      p.adj < 0.0005 ~ "***",
-                      TRUE ~ "NA")) %>%
-      rowwise() %>%
-      mutate(lab.pos = mean(c(which(levels(factor(mydata.tmp$NAME)) == group1), which(levels(factor(mydata.tmp$NAME)) == group2)))) %>%
-      ungroup()
-    
-    p.gene <- p.gene +
-      geom_segment(data = pos.stats, aes(y = y.seg, yend = y.seg, x = group1, xend = group2), size = 0.25) +
-      geom_text(data = pos.stats, aes(y = y.lab, label = lab, x = lab.pos), size = 6)
-    
-  }
   
   p.resqc <- filter(resqc, ID %in% mydata.tmp$ID) %>%
     select(ID, UTR3_Exons, UTR5_Exons, CDS_Exons, Introns, TES_down_10kb, TSS_up_10kb, totalReadTags) %>%
@@ -1745,20 +1622,21 @@ for(cycle in c(4,6,8,10,12)){
     theme_cowplot(font_size = 20) +
     facet_wrap("key", scales = "free_x", nrow = 1) +
     scale_fill_manual(values = c("FS-19c\n250 nL" = "#B10026",
-                                 "8c\n62.5 nL" = "#41B6C4", 
-                                 "8c\n125 nL" = "#225EA8", 
-                                 "8c\n1.56 nL" = "#EDF8B1", 
-                                 "6c\n7.81 nL" = "#EDF8B1", 
-                                 "6c\n15.63 nL" = "#41B6C4", 
-                                 "4c\n3.91 nL" = "#EDF8B1",
-                                 "4c\n15.63 nL" = "#41B6C4",
-                                 "4c\n78.13 nL" = "#225EA8",
-                                 "10c\n15.63 nL" = "#EDF8B1", 
-                                 "10c\n62.5 nL" = "#41B6C4", 
-                                 "12c\n100 nL" = "#41B6C4",
-                                 "12c\n31.25 nL" = "#EDF8B1")) +
+                                 "FS-LA-8c\n62.5 nL" = "#41B6C4", 
+                                 "FS-LA-8c\n125 nL" = "#225EA8", 
+                                 "FS-LA-8c\n1.56 nL" = "#EDF8B1", 
+                                 "FS-LA-6c\n7.81 nL" = "#EDF8B1", 
+                                 "FS-LA-6c\n15.63 nL" = "#41B6C4", 
+                                 "FS-LA-4c\n3.91 nL" = "#EDF8B1",
+                                 "FS-LA-4c\n15.63 nL" = "#41B6C4",
+                                 "FS-LA-4c\n78.13 nL" = "#225EA8",
+                                 "FS-LA-10c\n15.63 nL" = "#EDF8B1", 
+                                 "FS-LA-10c\n62.5 nL" = "#41B6C4", 
+                                 "FS-LA-12c\n100 nL" = "#41B6C4",
+                                 "FS-LA-12c\n31.25 nL" = "#EDF8B1")) +
     theme(legend.position = "none",
           rect = element_rect(size = 0.75, color = "black"), 
+          axis.text.x = element_text(angle = 45, hjust = 1),
           panel.border = element_rect(size = 0.75, color = "black"), 
           panel.grid.major.x = element_line(linetype = "dotted", color = "darkgrey", size = 0.5),
           axis.line.y.right = element_line(color = "black", linetype = "solid", size = 1)) +
@@ -1788,23 +1666,23 @@ for(cycle in c(4,6,8,10,12)){
           panel.grid.major.x = element_line(linetype = "dotted", color = "darkgrey", size = 0.5),
           axis.line.y.right = element_line(color = "black", linetype = "solid", size = 1)) +
     scale_fill_manual(values = c("FS-19c\n250 nL" = "#B10026",
-                                 "8c\n62.5 nL" = "#41B6C4", 
-                                 "8c\n125 nL" = "#225EA8", 
-                                 "8c\n1.56 nL" = "#EDF8B1", 
-                                 "6c\n7.81 nL" = "#EDF8B1", 
-                                 "6c\n15.63 nL" = "#41B6C4", 
-                                 "4c\n3.91 nL" = "#EDF8B1",
-                                 "4c\n15.63 nL" = "#41B6C4",
-                                 "4c\n78.13 nL" = "#225EA8",
-                                 "10c\n15.63 nL" = "#EDF8B1", 
-                                 "10c\n62.5 nL" = "#41B6C4", 
-                                 "12c\n100 nL" = "#41B6C4",
-                                 "12c\n31.25 nL" = "#EDF8B1"))
+                                 "FS-LA-8c\n62.5 nL" = "#41B6C4", 
+                                 "FS-LA-8c\n125 nL" = "#225EA8", 
+                                 "FS-LA-8c\n1.56 nL" = "#EDF8B1", 
+                                 "FS-LA-6c\n7.81 nL" = "#EDF8B1", 
+                                 "FS-LA-6c\n15.63 nL" = "#41B6C4", 
+                                 "FS-LA-4c\n3.91 nL" = "#EDF8B1",
+                                 "FS-LA-4c\n15.63 nL" = "#41B6C4",
+                                 "FS-LA-4c\n78.13 nL" = "#225EA8",
+                                 "FS-LA-10c\n15.63 nL" = "#EDF8B1", 
+                                 "FS-LA-10c\n62.5 nL" = "#41B6C4", 
+                                 "FS-LA-12c\n100 nL" = "#41B6C4",
+                                 "FS-LA-12c\n31.25 nL" = "#EDF8B1"))
   myplots[[cycle]] <- plot_grid(p.gene, p.resqc, p.star, nrow = 1, rel_widths = c(0.18, 0.44, 0.38))
   
-  ggsave(plot_grid(p.gene, p.resqc, p.star, nrow = 1, labels = "AUTO", rel_widths = c(0.18, 0.44, 0.38)), 
+  ggsave(plot_grid(p.gene, p.resqc, p.star, nrow = 1, labels = "AUTO", rel_widths = c(0.18, 0.44, 0.38)), bg = "white",
          filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_cycles_", cycle, ".tiff"),
-         dpi = 300, width = 30, height = 6)
+         dpi = 450, width = 30, height = 6)
   
 }
 
@@ -1814,7 +1692,7 @@ ggsave(plot_grid(myplots[[4]],
                  myplots[[10]],
                  myplots[[12]], nrow = 5, labels = "auto", label_size = 30), bg = "white", 
        filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_cycles_ALLCYCLES_ALLTN5.tiff"),
-       dpi = 150, width = 34, height = 30)
+       dpi = 300, width = 36, height = 32)
 
 ```
 
@@ -1833,19 +1711,19 @@ mydata <- med.exon %>%
     PLATE %in% c("247") & grepl("LV1", ID) | PLATE == "309" & dCTP == "3.3" ~ "FS-19c",
     # PLATE == "230" & CYCLES == "8" & grepl(ID, pattern = "00625") ~ "FS-8c",
     # PLATE == "230" & CYCLES == "8" & grepl(ID, pattern = "0125") ~ "8c_0.125",
-    PLATE == "230" & CYCLES == "8" & grepl(ID, pattern = "0015625") ~ "FS-8c",
-    PLATE == "260" & CYCLES == "6" & grepl(ID, pattern = "0015625") ~ "FS-6c",
+    PLATE == "230" & CYCLES == "8" & grepl(ID, pattern = "0015625") ~ "FS-LA-8c",
+    PLATE == "260" & CYCLES == "6" & grepl(ID, pattern = "0015625") ~ "FS-LA-6c",
     # PLATE == "260" & CYCLES == "6" & grepl(ID, pattern = "00078125") ~ "FS-6c\nTn5:15.625nL",
     # PLATE == "258" & CYCLES == "4" & grepl(ID, pattern = "00039063") ~ "4c_0.0039063",
-    PLATE == "258" & CYCLES == "4" & grepl(ID, pattern = "0015625") ~ "FS-4c",
+    PLATE == "258" & CYCLES == "4" & grepl(ID, pattern = "0015625") ~ "FS-LA-4c",
     # PLATE == "258" & CYCLES == "4" & grepl(ID, pattern = "0078125") ~ "4c_0.078125",
     # PLATE == "261" & CYCLES == "10" & grepl(ID, pattern = "0015625") ~ "10c_0.015625",
-    PLATE == "261" & CYCLES == "10" & grepl(ID, pattern = "00625") ~ "FS-10c",
-    PLATE == "262" & CYCLES == "12" & grepl(ID, pattern = "01") ~ "FS-12c"
+    PLATE == "261" & CYCLES == "10" & grepl(ID, pattern = "00625") ~ "FS-LA-10c",
+    PLATE == "262" & CYCLES == "12" & grepl(ID, pattern = "01") ~ "FS-LA-12c"
     # PLATE == "262" & CYCLES == "12" & grepl(ID, pattern = "003125") ~ "12c_0.03125"
     )) %>%
   filter(!is.na(NAME), DEPTH == 250000) %>%
-  mutate(NAME = factor(as.factor(NAME), levels = c("FS-19c", "FS-12c", "FS-10c", "FS-4c", "FS-8c", "FS-6c")),
+  mutate(NAME = factor(as.factor(NAME), levels = c("FS-19c", "FS-LA-12c", "FS-LA-10c", "FS-LA-8c", "FS-LA-6c", "FS-LA-4c")),
          sce.ids = str_replace(paste0("X", ID, "_250000_1"), "-", "."))
 write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
          
@@ -1864,9 +1742,17 @@ expressed.genes <- Reduce(union, expressed.genes)
 
 sce.expressed <- sce.expressed[row.names(sce.expressed) %in% expressed.genes,]
 
+# SAVE MATRIX
+newNames <- read_tsv("/home/vincent.hahaut/Desktop/fastqTransform.txt")
+newNames$OLD_FASTQ_ID <- str_replace_all(paste0("X", newNames$OLD_FASTQ_ID, "_250000_1"), "-", ".")
+
+colnames(sce.expressed) <- newNames$FINAL_FASTQ_ID[match(colnames(sce.expressed), newNames$OLD_FASTQ_ID)]
+
+write_rds(sce.expressed, "/home/vincent.hahaut/data_storage/transfer/Mendeley/HEK_FS_lowAmplification_250K.rds")
+
 # 3. Correlations
 corrs <- data_frame()
-for(j in unique(c("FS-19c", "FS-12c", "FS-10c", "FS-4c", "FS-8c", "FS-6c"))){
+for(j in unique(c("FS-19c", "FS-LA-12c", "FS-LA-10c", "FS-LA-4c", "FS-LA-8c", "FS-LA-6c"))){
     sce.tmp <- counts(sce.expressed[,sce.expressed$GROUP == j])
     p <- pcaPP::cor.fk(sce.tmp) 
     
@@ -1877,28 +1763,19 @@ for(j in unique(c("FS-19c", "FS-12c", "FS-10c", "FS-4c", "FS-8c", "FS-6c"))){
 
 # 4. Statistical Comparisons
 shapiro.test(corrs$tau)
-corrs$GROUP <- factor(corrs$GROUP)
-corrs$GROUP <- reorder(corrs$GROUP, corrs$tau, median)
-du <- FSA::dunnTest(tau ~ GROUP, data=corrs, method="bonferroni")
-comparisons <- str_split(du$res$Comparison, " - ", simplify = TRUE)
-geomseg <- data_frame(
-  x = comparisons[,1],
-  xend = comparisons[,2],
-  padj = padj <- du$res$P.adj,
-  lab = case_when(padj < 0.05 & padj >= 0.005 ~ "*",
-                  padj < 0.005 & padj >= 0.0005 ~ "**",
-                  padj < 0.0005 ~ "***",
-                  padj >= 0.05 ~ "ns",
-                  )) %>%
-  filter(lab != "ns") %>%
-  mutate(y = seq(0.8, 0.8+0.01*13, 0.01)) %>%
-  rowwise() %>%
-  mutate(x.mid = (which(levels(corrs$GROUP) == xend) + which(levels(corrs$GROUP) == x))/2)
+
+p.signif <-   corrs %>%
+  rstatix::dunn_test(tau ~ GROUP, p.adjust.method = "bonferroni") %>%
+  filter(p.adj < 0.05) %>% 
+  rstatix::add_y_position(fun = "max", scales = "free") %>%
+  mutate(p.adj.signif = formatC(p.adj, format = "e", digits = 2))
 
 # 5. Visualize results
 p6 <- corrs %>%
+  mutate(GROUP = factor(GROUP, levels = c("FS-19c", "FS-LA-12c", "FS-LA-10c", "FS-LA-8c", "FS-LA-6c", "FS-LA-4c"))) %>%
   ggplot(aes(x = GROUP, y = tau)) + 
-  geom_hline(yintercept = seq(0.40, 0.8, 0.05), linetype = "dotted", color = "darkgrey") +
+  geom_hline(yintercept = seq(0.45, 0.7, 0.05), linetype = "dotted", color = "darkgrey") +
+  scale_y_continuous(breaks = seq(0.4,0.7,0.1)) +
   geom_violin(aes(fill = GROUP)) +
   geom_boxplot(aes(fill = GROUP), width = 0.1) +
   theme_cowplot(font_size = 24) +
@@ -1906,16 +1783,15 @@ p6 <- corrs %>%
         axis.text.x = element_text(size = 18, angle = 45, hjust = 1), 
         axis.title = element_text(size = 20)) +
   xlab("") +
-  scale_fill_manual(values = c("FS-4c" = "#FED976", 
-"FS-8c" = "#FEB24C", 
-"FS-6c" = "#FD8D3C", 
-"FS-10c" = "#FC4E2A", 
-"FS-12c" = "#E31A1C", 
+  scale_fill_manual(values = c("FS-LA-4c" = "#FED976", 
+"FS-LA-8c" = "#FD8D3C", 
+"FS-LA-6c" = "#FEB24C", 
+"FS-LA-10c" = "#FC4E2A", 
+"FS-LA-12c" = "#E31A1C", 
 "FS-19c" = "#B10026")) +
   ylab("Cell-to-Cell Correlation (tau)") +
-  geom_segment(data = geomseg, aes(x = x, xend = xend, y = y, yend = y)) +
-  geom_text(data = geomseg, aes(x = x.mid, y = y+0.0005, label=lab), size=6)
+    ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}",  step.increase = 0.025, tip.length = 0.01, size = 4) 
 
 ggsave(p6, 
-       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_LA_kendallCorr.tiff", bg = "white", dpi = 300, width = 6, height = 8)
+       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_LA_kendallCorr.tiff", bg = "white", dpi = 450, width = 6, height = 8)
 ```

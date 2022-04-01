@@ -4,9 +4,9 @@ ulimit -n 100000
 
 # 0. PATH
 # The sample sheet only contains the FASTQ prefix - one per lane
-SAMPLESHEET="/home/vincent.hahaut/data_storage/211202_NB551561_0072_AH3YYHBGXK/ID.txt"
-OUT="/home/vincent.hahaut/data_storage/211202_NB551561_0072_AH3YYHBGXK/STAR/"
-IN="/home/vincent.hahaut/data_storage/211202_NB551561_0072_AH3YYHBGXK/"
+SAMPLESHEET="/home/vincent.hahaut/data_storage/210122_NB551561_0039_AHH5VCBGXH/xad"
+OUT="/home/vincent.hahaut/data_storage/210122_NB551561_0039_AHH5VCBGXH/STAR/"
+IN="/home/vincent.hahaut/data_storage/210122_NB551561_0039_AHH5VCBGXH/"
 
 # 1. REFERENCES
 STAR_REF="/home/vincent.hahaut/data_storage/REFERENCES/hsap_fastsmart/STAR/"
@@ -111,7 +111,8 @@ while IFS=$'\t' read -r -a myArray; do
 	# 7. Downsampling
 	mkdir DOWNSAMPLE
 	cd DOWNSAMPLE
-	for DOWN in 5000 10000 20000 40000 50000 75000 100000 125000 250000 375000 500000
+#	for DOWN in 5000 10000 20000 40000 50000 75000 100000 125000 250000 375000 500000
+	for DOWN in 100000 250000
 	do
 	if [ `zcat "$MYFASTQ" | grep -c ^@`  -gt "$DOWN" ]
 	then
@@ -172,7 +173,7 @@ while IFS=$'\t' read -r -a myArray; do
 
 	# 8.1. GeneBodyCoverage
 	# Slow down the script ++ - turn off if not needed
-	geneBody_coverage.py -r "$ReSQCBED" -i STAR/"$ID"_Aligned.sortedByCoord.filtered.bam -o ReSQC/"$ID"_geneBody.all &
+	# geneBody_coverage.py -r "$ReSQCBED" -i STAR/"$ID"_Aligned.sortedByCoord.filtered.bam -o ReSQC/"$ID"_geneBody.all &
 
 	# 8.2. ReSQC Statistics
 	read_distribution.py -i STAR/"$ID"_Aligned.sortedByCoord.filtered.bam -r "$ReSQCBED" > ReSQC/"$ID"_readDistribution.txt &

@@ -311,9 +311,9 @@ p.diagn <- plot_grid(nrow = 2,
           FeaturePlot(ssce, features = "nUMI") + scale_color_viridis_c(option = "viridis") +  ggtitle("nUMI"), 
           FeaturePlot(ssce, features = "nFeature_RNA") + scale_color_viridis_c(option = "viridis") +  ggtitle("nFeatures"))
 
-ggsave(DimPlot(ssce, group.by = "seurat_clusters", pt.size = 1.25, label = T, cols = mycolors), dpi = 300, width = 10, height = 8, bg = "white",
+ggsave(DimPlot(ssce, group.by = "seurat_clusters", pt.size = 1.25, label = T, cols = mycolors), dpi = 450, width = 10, height = 8, bg = "white",
        file = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/10x_organoids.dimplot.tiff")
-ggsave(p.diagn, dpi = 300, width = 10, height = 8, bg = "white",
+ggsave(p.diagn, dpi = 450, width = 10, height = 8, bg = "white",
        file = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/10x_organoids.diagnosis.tiff")
 
 # 5. Markers
@@ -356,8 +356,13 @@ ssce$cell_type <- factor(ssce$cell_type, levels = c("Photoreceptor/Bipolar Fate"
 # 9. Save results
 write_rds(ssce, "/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS_10x.processed.rds")
 
-ggsave(DimPlot(ssce, group.by = "cell_type", pt.size = 1.25) + scale_color_manual(values = celltype.colors()), dpi = 300, width = 12, height = 8, bg = "white",
+ggsave(DimPlot(ssce, group.by = "cell_type", pt.size = 1.25) + scale_color_manual(values = celltype.colors()), dpi = 450, width = 10, height = 8, bg = "white",
        file = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/10x_organoids.celltype.tiff")
+ggsave(DimPlot(ssce, group.by = "cell_type", pt.size = 1.25) + 
+         scale_color_manual(values = celltype.colors()) +
+                              theme_void() +
+         theme(legend.position = "none", title = element_blank()), dpi = 450, width = 12, height = 8, bg = "white",
+       file = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/10x_organoids.celltype.pdf")
 
 # 10. Heatmap of top markers
 top.markers <- markers %>% group_by(cluster) %>%  dplyr::slice(1:4)
@@ -412,9 +417,9 @@ p.dotplot <- DotPlot(object = ssce, features = unique(c(
     scale_color_gradientn(colours = rev(RColorBrewer::brewer.pal(name = "RdBu", 8))) +
   xlab("") + ylab("")
 
-ggsave(p.dotplot, dpi = 300, width = 12, height = 12, bg = "white",
+ggsave(p.dotplot, dpi = 450, width = 12, height = 12, bg = "white",
        file = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/10x_organoids.dotplot.tiff")
-ggsave(p.topheat, dpi = 300, width = 12, height = 10, bg = "white",
+ggsave(p.topheat, dpi = 450, width = 12, height = 10, bg = "white",
        file = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/10x_organoids.heatmapTop.tiff")
 
 ```

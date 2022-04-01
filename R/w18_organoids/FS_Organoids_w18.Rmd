@@ -145,11 +145,19 @@ ReSQC.distr.internal <- ReSQC.distr.internal[ReSQC.distr.internal$ID %in% index,
 salmon.all <- salmon.all[,colnames(salmon.all) %in% index]
 STAR.log.umi <- STAR.log.umi[STAR.log.umi$ID %in% index,]
 STAR.log.internal <- STAR.log.internal[STAR.log.internal$ID %in% index,]
+
+
+write.table(counts(featurecounts.all), "/home/vincent.hahaut/data_storage/transfer/Mendeley/FS_w18organoids_allReads_raw.txt", quote = F, row.names = TRUE, sep = "\t")
+  write.table(counts(umi.exon), "/home/vincent.hahaut/data_storage/transfer/Mendeley/FS_w18organoids_umiReads_raw.txt", quote = F, row.names = TRUE, sep = "\t")
+write.table(counts(featurecounts.exon), "/home/vincent.hahaut/data_storage/transfer/Mendeley/FS_w18organoids_internalReads_raw.txt", quote = F, row.names = TRUE, sep = "\t")
+write.table(counts(salmon.all), "/home/vincent.hahaut/data_storage/transfer/Mendeley/FS_w18organoids_isoforms_raw.txt", quote = F, row.names = TRUE, sep = "\t")
+
+
 ```
 
 ```{r Process data, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
 
-source("~/Desktop/FLASH-Seq/R/general/6_SingleCell_functions.R")
+source("~/Desktop/FLASH-Seq/R/general/6_singleCell_functions.R")
 library(Seurat)
 
 # 1. List of genes to filter out
@@ -260,18 +268,25 @@ write_rds(ssce.FS.umi, "/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.um
 write_rds(ssce.FS.all, "/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.all.ssce.rds")
 
 # 3. Visualize cell type distribution
-p.dimplot.celltype <- plot_grid(ncol = 3,
-   DimPlot(ssce.FS.all, group.by = "cell_type") + scale_color_manual(values = celltype.colors()) + theme(legend.position = "none"),
- DimPlot(ssce.FS.internal, group.by = "cell_type") + scale_color_manual(values = celltype.colors()) + theme(legend.position = "none"),
-  DimPlot(ssce.FS.umi, group.by = "cell_type") + scale_color_manual(values = celltype.colors()) + theme(legend.position = "none"))
+p.dimplot.celltype <- plot_grid(nrow = 3,
+   DimPlot(ssce.FS.all, group.by = "cell_type") + scale_color_manual(values = celltype.colors()) + theme_void() + theme(legend.position = "none", title = element_blank()),
+ DimPlot(ssce.FS.internal, group.by = "cell_type") + scale_color_manual(values = celltype.colors()) + theme_void() +theme(legend.position = "none", title = element_blank()),
+  DimPlot(ssce.FS.umi, group.by = "cell_type") + scale_color_manual(values = celltype.colors()) + theme_void() +theme(legend.position = "none", title = element_blank()))
 
-ggsave(p.dimplot.celltype, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_dimplot.celltype.tiff", bg = "white", dpi = 300, width = 18, height = 6)
+ggsave(p.dimplot.celltype, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_dimplot.celltype.tiff", bg = "white", dpi = 450, height = 18, width = 6)
 
 # 4. Save results
 ssce.FS.all$cell_type <- factor(ssce.FS.all$cell_type, levels = c("Photoreceptor/Bipolar Fate", "Rod Fate", "Rods", "Cone Fate", "Müller Fate", "Müller Cells", "Bipolar Fate", "Bipolar Cells (OFF)",  "Bipolar Cells (ON)", "Amacrine/Horizontal Fate", "Amacrine Fate", "Amacrine Cells (GABA)", "Horizontal Cells",  "Glia", "Proliferating Cells", "Apoptotic Cells"))
 
-ggsave(DimPlot(ssce.FS.all, group.by = "cell_type", pt.size = 1.25) + scale_color_manual(values = celltype.colors()), dpi = 300, width = 12, height = 8, bg = "white",
+ggsave(DimPlot(ssce.FS.all, group.by = "cell_type", pt.size = 1.25) + scale_color_manual(values = celltype.colors()), dpi = 450, width = 12, height = 8, bg = "white",
        file = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_dimplot.ALL.celltype.tiff")
+
+ggsave(DimPlot(ssce.FS.all, group.by = "cell_type", pt.size = 1.25) + scale_color_manual(values = celltype.colors()) + theme_void() + theme(legend.position = "none"), dpi = 450, width = 12, height = 8, bg = "white",
+       file = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_dimplot.ALL.celltype.void.tiff")
+
+ssce.10x <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS_10x.processed.rds")
+ggsave(DimPlot(ssce.10x, group.by = "cell_type", pt.size = 1.25) + scale_color_manual(values = celltype.colors()) + theme_void() + theme(legend.position = "none"), dpi = 450, width = 12, height = 8, bg = "white",
+       file = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_dimplot.10x.celltype.void.tiff")
 
 ```
 
@@ -310,6 +325,7 @@ celltypes <- bind_rows(
 p.celltypes <- celltypes %>% 
   filter(!cell_type %in% c("Apoptotic Cells", "Amacrine Fate", "Glia", "Bipolar Fate", "Amacrine/Horizontal Fate", "Proliferating Cells")) %>%
   ggplot(aes(x = cell_type, y = perc, fill = GROUP)) +
+  coord_flip() +
   geom_hline(yintercept = seq(0,25,5), linetype = "dashed", color = "darkgrey") +
   geom_bar(stat = "identity", position = "dodge", color = "black") + 
   scale_fill_manual(values = c("ALL" = "#FF850D", 
@@ -317,10 +333,10 @@ p.celltypes <- celltypes %>%
                                "UMI" = "#E7298A",
                                "INTERNAL" = "#7570B3")) +
   theme_cowplot(font_size = 20) +
-  theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1, size = 12)) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1, size = 16)) +
   xlab("") + ylab("Cells (%)")
   
-ggsave(p.celltypes, bg = "white", filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_cell_types.perc.tiff", dpi = 200, height = 5, width = 10)
+ggsave(p.celltypes, bg = "white", filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_cell_types.perc.tiff", dpi = 450, height = 10, width = 7)
 ```
 
 
@@ -388,7 +404,7 @@ p.dotplot <- DotPlot(object = ssce.FS.umi, features = unique(c(
     scale_color_gradientn(colours = rev(RColorBrewer::brewer.pal(name = "RdBu", 8))) +
   xlab("") + ylab("")
 
-ggsave(p.dotplot, dpi = 300, width = 12, height = 12, bg = "white",
+ggsave(p.dotplot, dpi = 450, width = 12, height = 12, bg = "white",
        file = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_UMI.dotplot.tiff")
 
 p.dotplot <- DotPlot(object = ssce.FS.internal, features = unique(c(
@@ -431,7 +447,7 @@ p.dotplot <- DotPlot(object = ssce.FS.internal, features = unique(c(
     scale_color_gradientn(colours = rev(RColorBrewer::brewer.pal(name = "RdBu", 8))) +
   xlab("") + ylab("")
 
-ggsave(p.dotplot, dpi = 300, width = 12, height = 12, bg = "white",
+ggsave(p.dotplot, dpi = 450, width = 12, height = 12, bg = "white",
        file = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_INTERNAL.dotplot.tiff")
 
 
@@ -475,7 +491,7 @@ p.dotplot <- DotPlot(object = ssce.FS.all, features = unique(c(
     scale_color_gradientn(colours = rev(RColorBrewer::brewer.pal(name = "RdBu", 8))) +
   xlab("") + ylab("")
 
-ggsave(p.dotplot, dpi = 300, width = 12, height = 12, bg = "white",
+ggsave(p.dotplot, dpi = 450, width = 12, height = 12, bg = "white",
        file = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_ALL.dotplot.tiff")
 
 ```
@@ -565,10 +581,10 @@ p.logFcRelation <-
   theme_cowplot(font_size = 20) +
   ylab("Cell type markers\navg_log2FC\nUMI-reads") + 
   xlab("Cell type markers\navg_log2FC\nInternal-reads") +
-  geom_text(data = data_frame(), aes(x = 7, y = 1, label = "Pearson:0.7147"), size = 6) +
-  geom_text(data = data_frame(), aes(x = 7, y = 2, label = "Spearman:0.6246"), size = 6)
+  geom_text(data = data_frame(), aes(x = 7, y = 1, label = "Pearson:0.7147\np<2e-16"), size = 5) +
+  geom_text(data = data_frame(), aes(x = 7, y = 2, label = "Spearman:0.6246\np<2e-16"), size = 5)
 
-ggsave(p.logFcRelation, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_pLogFC.tiff", dpi = 300, height = 6, width = 8, bg= "white")
+ggsave(p.logFcRelation, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_pLogFC.tiff", dpi = 450, height = 6, width = 8, bg= "white")
 
 
 # 1.3. LogFC distributions: 
@@ -599,7 +615,7 @@ p.logFold.distrib <- bind_rows(
                                "INTERNAL" = "#7570B3")) +
   theme(legend.position = "none") 
 
-ggsave(p.logFold.distrib, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/logFold.distribution.tiff", dpi = 300, height = 4, width = 6, bg = "white")
+ggsave(p.logFold.distrib, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/logFold.distribution.tiff", dpi = 450, height = 4, width = 6, bg = "white")
 
 # 2. Compare the markers
 markers.celltype <- data_frame()
@@ -645,43 +661,43 @@ for(i in unique(names(markers.celltype.l))){
   
   uu.l[[i]] <- UpSetR::upset(UpSetR::fromList(markers.celltype.l[[i]]), 
               order.by = "freq",
-              text.scale = c(3,3,3,1.5,2,2),
+              text.scale = c(2.5,2.5,2.5,2,2,2),
               set_size.angles = 90,
               sets.bar.color = as.vector(celltype.colors()[names(celltype.colors()) == i]))
 }
 
 # Tiff was not working in the loop
-tiff(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/UpsteR.photobipolarFate.tiff"), bg = "white")
+tiff(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/UpsteR.photobipolarFate.tiff"), width = 3600, height = 2400, res = 450,bg = "white")
 uu.l[[1]]
 dev.off()
-tiff(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/UpsteR.", names(uu.l)[2], ".tiff"), bg = "white")
+tiff(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/UpsteR.", names(uu.l)[2], ".tiff"), width = 3600, height = 2400, res = 450,bg = "white")
 uu.l[[2]]
 dev.off()
-tiff(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/UpsteR.", names(uu.l)[3], ".tiff"), bg = "white")
+tiff(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/UpsteR.", names(uu.l)[3], ".tiff"), width = 3600, height = 2400, res = 450, bg = "white")
 uu.l[[3]]
 dev.off()
-tiff(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/UpsteR.", names(uu.l)[4], ".tiff"), bg = "white")
+tiff(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/UpsteR.", names(uu.l)[4], ".tiff"), width = 3600, height = 2400, res = 450, bg = "white")
 uu.l[[4]]
 dev.off()
-tiff(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/UpsteR.", names(uu.l)[5], ".tiff"), bg = "white")
+tiff(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/UpsteR.", names(uu.l)[5], ".tiff"), width = 3600, height = 2400, res = 450,bg = "white")
 uu.l[[5]]
 dev.off()
-tiff(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/UpsteR.", names(uu.l)[6], ".tiff"), bg = "white")
+tiff(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/UpsteR.", names(uu.l)[6], ".tiff"), width = 3600, height = 2400, res = 450,bg = "white")
 uu.l[[6]]
 dev.off()
-tiff(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/UpsteR.", names(uu.l)[7], ".tiff"), bg = "white")
+tiff(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/UpsteR.", names(uu.l)[7], ".tiff"), width = 3600, height = 2400, res = 450,bg = "white")
 uu.l[[7]]
 dev.off()
-tiff(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/UpsteR.", names(uu.l)[8], ".tiff"), bg = "white")
+tiff(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/UpsteR.", names(uu.l)[8], ".tiff"), width = 3600, height = 2400, res = 350,bg = "white")
 uu.l[[8]]
 dev.off()
-tiff(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/UpsteR.horizamacrineFate.tiff"), bg = "white")
+tiff(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/UpsteR.horizamacrineFate.tiff"), width = 3600, height = 2400, res = 450,bg = "white")
 uu.l[[9]]
 dev.off()
-tiff(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/UpsteR.", names(uu.l)[10], ".tiff"), bg = "white")
+tiff(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/UpsteR.", names(uu.l)[10], ".tiff"), width = 3600, height = 2400, res = 450,bg = "white")
 uu.l[[10]]
 dev.off()
-tiff(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/UpsteR.", names(uu.l)[11], ".tiff"), bg = "white")
+tiff(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/UpsteR.", names(uu.l)[11], ".tiff"), width = 3000, height = 2400 ,res = 450, bg = "white")
 uu.l[[11]]
 dev.off()
 
@@ -721,16 +737,16 @@ for(i in unique(markers.10x.cell$cluster)){
     # Add the gene properties info
     umi.specific <- left_join(data.frame(gene_name = umi.specific), gc.perc) %>%
       left_join(gtf.type) %>%
-      mutate(TYPE = "FS-UMI Specific")
+      mutate(TYPE = "Specific to\nFS-UMI")
     umi.10x.overlap <- left_join(data.frame(gene_name = umi.10x.overlap), gc.perc) %>%
       left_join(gtf.type) %>%
-      mutate(TYPE = "Overlap UMI-10x")
+      mutate(TYPE = "Overlaping\nUMI-10x")
     inter.specific <- left_join(data.frame(gene_name = inter.specific), gc.perc) %>%
       left_join(gtf.type) %>%
-      mutate(TYPE = "FS-Internal Specific")
+      mutate(TYPE = "Specific to\nFS-Internal")
     inter.10x.overlap <- left_join(data.frame(gene_name = inter.10x.overlap), gc.perc)%>%
       left_join(gtf.type) %>%
-      mutate(TYPE = "Overlap Internal-10x")
+      mutate(TYPE = "Overlaping\nInternal-10x")
   
     # Aggregate results
     overlaps <- bind_rows(umi.specific, umi.10x.overlap, inter.specific, inter.10x.overlap) %>%
@@ -763,22 +779,43 @@ p.overlap <- overlap.properties %>%
   group_by(TYPE, cell_type, gene_type) %>%
   summarise(perc = 100*n()/unique(total)) %>%
   ungroup() %>%
-  ggplot(aes(x = gene_type, y = perc, fill = TYPE)) +
+  mutate(TYPE = factor(TYPE, levels = c("Specific to\nFS-UMI", "Overlaping\nUMI-10x", "Specific to\nFS-Internal", "Overlaping\nInternal-10x"))) %>%
+  ggplot(aes(x = TYPE, y = perc, fill = TYPE)) +
   geom_hline(yintercept = seq(0,100,20), linetype = "dashed", color = "darkgrey") +
   geom_violin() +
+  facet_wrap("gene_type", scales = "free_x") + 
   geom_boxplot(width = 0.1, position = position_dodge(0.9)) +
   scale_fill_brewer(palette = "Set1") +
-  theme_cowplot(font_size = 20) +
-  xlab("") + ylab("Detected Genes (%)") +
-  theme(legend.title = element_blank(),
-        legend.position = "bottom") +
-  guides(fill = guide_legend(nrow = 2))
+  theme_bw(base_size = 20) +
+  xlab("") + ylab("Cell Type\nMarker (%)") +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1)) +
+  guides(fill = guide_legend(nrow = 2)) +
+  scale_y_continuous(breaks = seq(0,100,10), limits = c(0,105))
 
 ggsave(filename = paste0("/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/Gene_features.tiff"),
   p.overlap,
-  dpi = 200, width = 6, height = 4, bg = "white")
+  dpi = 450, width = 9, height = 6, bg = "white")
 
 # No ACTUAL DIFFERENCES EXCEPT LNCRNA
+test <- overlap.properties %>%
+    filter(gene_type %in% c("protein_coding", "lncRNA")) %>%
+    mutate(gene_type = ifelse(gene_type == "protein_coding", "Protein Coding", "LncRNA")) %>%
+    group_by(TYPE, cell_type) %>%
+    mutate(total = n()) %>%
+    group_by(TYPE, cell_type, gene_type) %>%
+    summarise(perc = 100*n()/unique(total)) %>%
+    ungroup() 
+
+wilcox.test(data = filter(test, gene_type == "Protein Coding", TYPE %in% c("Overlaping\nInternal-10x", "Specific to\nFS-Internal")),
+            perc ~ TYPE )
+wilcox.test(data = filter(test, gene_type == "Protein Coding", TYPE %in% c("Overlaping\nUMI-10x", "Specific to\nFS-UMI")),
+            perc ~ TYPE )
+wilcox.test(data = filter(test, gene_type == "LncRNA", TYPE %in% c("Overlaping\nInternal-10x", "Specific to\nFS-Internal")),
+            perc ~ TYPE )
+wilcox.test(data = filter(test, gene_type == "LncRNA", TYPE %in% c("Overlaping\nUMI-10x", "Specific to\nFS-UMI")),
+            perc ~ TYPE )
+
 ```
 
 
@@ -828,15 +865,16 @@ p.diversity <- res %>%
   geom_hline(yintercept = seq(2000,10000,1000), linetype = "dashed", color = "darkgrey") +
   geom_violin(aes(x = cell_type, fill = name, y = value)) +
   geom_boxplot(aes(x = cell_type, fill = name, y = value), width = 0.1, position = position_dodge(width = 0.9)) +
+  facet_wrap("cell_type", scales = "free_y", ncol = 1) +
   scale_fill_manual(values = c("SMART" = "#FF850D", 
                                "DROPLET" = "#2ac7c2")) +
-  theme_cowplot(font_size = 20) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 12), legend.position = "none") +
-  ylab("Gene Diversity") + xlab("") +
-  theme(legend.title = element_blank()) 
+  coord_flip() +
+  theme_bw(base_size = 18) +
+  theme(axis.text.y = element_blank(),legend.position = "none", legend.title = element_blank(), axis.ticks.y = element_blank()) +
+  ylab("Gene Diversity") + xlab("") 
 
 ggsave(p.diversity, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_diversity.tiff",
-       dpi = 200, width = 8, height = 6, bg = "white")
+       dpi = 450, width = 6, height = 10, bg = "white")
 
 ```
 
@@ -895,35 +933,90 @@ res <- res %>%
 p.signif <- res %>%
   group_by(cell_type) %>%
   rstatix::dunn_test(value ~ name) %>%
+  rstatix::add_y_position(fun = "max", scales = "free") %>%
   filter(group1 == "DROPLET") %>%
   filter(p.adj < 0.05) %>%
   mutate(p.adj = p.adjust(p, method = "bonferroni"),
-         p.adj.signif = ifelse(p.adj.signif == "****", "***", p.adj.signif)) %>%
-  group_by(cell_type) %>%
-  mutate(y = seq(7000,7000+250*(n()-1),250)) %>%
-  ungroup() %>%
-  mutate(xstart = 0.675,
-         xend = xstart+(match(group2, levels(factor(res$name)))-1)/3)
+         p.adj.signif = formatC(p.adj, format = "e", digits = 2)) 
+    
+
 
 p.diversity <- res %>%
   ggplot() +
-  geom_violin(aes(x = cell_type, fill = name, y = value)) +
-  geom_boxplot(aes(x = cell_type, fill = name, y = value), width = 0.1, position = position_dodge(width = 0.9)) +
+  geom_violin(aes(x = name, fill = name, y = value)) +
+  geom_boxplot(aes(x = name, fill = name, y = value), width = 0.1, position = position_dodge(width = 0.9)) +
+  ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}", step.increase = 0.05, step.group.by = "cell_type", tip.length = 0.01, size = 4) +
   scale_fill_manual(values = c("UMI" = "#E7298A", 
                                "INTERNAL" = "#7570B3",
                                "DROPLET" = "#2ac7c2")) +
   facet_wrap("cell_type", scales = "free_x", nrow = 2) +
   theme_bw(base_size = 18) +
-  ylab("Gene Diversity") + ylab("") +
+  ylab("Gene Diversity") + xlab("") +
   theme(legend.position = "none", 
         legend.title = element_blank(), 
         axis.ticks.x = element_blank(),
-        axis.text.x = element_blank()) +
-  geom_segment(data = p.signif, aes(x = xstart, xend = xend, y=y,yend=y)) + 
-  geom_text(data = p.signif, aes(x = (xstart+xend)/2, y=y*1.005, label = p.adj.signif), size = 7) 
+        axis.text.x = element_blank()) 
 
 ggsave(p.diversity, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_diversity.downsample.tiff",
-       dpi = 200, width = 20, height = 6, bg = "white")
+       dpi = 450, width = 16, height = 10, bg = "white")
+
+```
+
+```{r gene detected - matching depth, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
+
+# 1. Load Results
+ssce.FS.all <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.internal.ssce.rds")
+ssce.10x <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS_10x.processed.rds")
+c.FS.internal <- featurecounts.exon.down
+c.FS.umi <- umi.exon.down
+
+df <- bind_rows(
+  data_frame(count_0 = ssce.10x$nFeature_RNA,
+           cell_type = ssce.10x$cell_type,
+           TYPE = "DROPLET"),
+  data_frame(ID = paste0("X", colnames(c.FS.umi)),
+             count_0 = colSums(counts(c.FS.umi) > 0),
+             TYPE = "UMI") %>% 
+    right_join(dplyr::select(as.data.frame(ssce.FS.all@meta.data) %>% rownames_to_column("ID"), ID, cell_type) %>% mutate(ID = paste0(ID, "_33800"))),
+  data_frame(ID = colnames(c.FS.internal),
+             count_0 = colSums(counts(c.FS.internal) > 0),
+             TYPE = "INTERNAL") %>%
+    right_join(dplyr::select(as.data.frame(ssce.FS.all@meta.data) %>% rownames_to_column("ID"), ID, cell_type) %>% mutate(ID = paste0(ID, "_33800"))),
+) %>%
+    filter(!cell_type %in% c("Bipolar Fate", "Glia", "Proliferating Cells", "Amacrine/Horizontal Fate", "Apoptotic Cells", "Amacrine Fate"),
+           !is.na(TYPE))
+
+
+p.signif <- df %>%
+  group_by(cell_type) %>%
+  rstatix::dunn_test(count_0 ~ TYPE) %>%
+  rstatix::add_y_position(fun = "max", scales = "free") %>%
+  filter(group1 == "DROPLET") %>%
+  filter(p.adj < 0.05) %>%
+  mutate(p.adj = p.adjust(p, method = "bonferroni"),
+         p.adj.signif = formatC(p.adj, format = "e", digits = 2)) 
+
+p.detected <- df %>%
+  ggplot() +
+  geom_violin(aes(x = TYPE, fill = TYPE, y = count_0)) +
+  geom_boxplot(aes(x = TYPE, fill = TYPE, y = count_0), width = 0.1, position = position_dodge(width = 0.9)) +
+  ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}", step.increase = 0.04, step.group.by = "cell_type", tip.length = 0.01, size = 4) +
+  scale_fill_manual(values = c("UMI" = "#E7298A", 
+                               "INTERNAL" = "#7570B3",
+                               "DROPLET" = "#2ac7c2")) +
+  facet_wrap("cell_type", scales = "free_x", nrow = 2) +
+  theme_bw(base_size = 18) +
+  ylab("Gene Detected") + xlab("") +
+  theme(legend.position = "none", 
+        legend.title = element_blank(), 
+        axis.ticks.x = element_blank(),
+        axis.text.x = element_blank()) 
+
+ggsave(p.detected, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_detected.downsample.tiff",
+       dpi = 450, width = 16, height = 10, bg = "white")
+
+ggsave(plot_grid(p.diversity, p.detected, nrow = 2), filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_detected_diversity.downsample.tiff",
+       dpi = 450, width = 20, height = 14, bg = "white")
 
 ```
 
@@ -982,6 +1075,8 @@ p.proportion <- ggplot(med %>% filter(cell_type.internal != "Apoptotic Cells"), 
   theme_cowplot(font_size = 20) +
   theme(legend.position = "none", axis.text.x = element_text(size = 12)) + 
   xlab("") + ylab("Proportion\nUMI / Internal Genes")
+ggsave(p.proportion, dpi = 450, height = 6, width = 6, bg = "white",
+       filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_proportions.tiff")
 
 
 # 5. Number of detected genes per read type
@@ -1004,47 +1099,62 @@ med <- med %>%
 # 6. Statistical significance
 
 # 6.1. Wilcoxon-test paired intra FS
-p.signif <- ggpubr::compare_means(data = med, value ~ name  , group.by = "cell_type.internal") %>%
-  filter(group1 != "FS-UMI\nAll\nTranscripts", group2 != "FS-UMI\nAll\nTranscripts") %>%
-  # Readjust pvals as one group was dropped
-  mutate(p.adj = p.adjust(p, method = "bonferroni"),
-         p.signif = case_when(p.adj < 0.05 & p.adj > 0.005 ~ "*",
-                              p.adj < 0.005 & p.adj > 0.0005 ~ "**",
-                              p.adj < 0.0005 ~ "***",
-                              TRUE ~ "ns")) %>%
-  filter(p.adj < 0.05) %>%
+p.signif <- med %>%
+  filter(name != "FS-UMI\nAll\nTranscripts") %>%
   group_by(cell_type.internal) %>%
-  mutate(y = seq(15000,15000+800*(n()-1),800)) %>%
+  rstatix::wilcox_test(value ~ name, p.adjust.method = "bonferroni") %>%
   ungroup() %>%
-  mutate(xstart = match(group1, levels(med$name)),
-         xend = match(group2, levels(med$name))) 
+  filter(p.adj < 0.05) %>%
+  rstatix::add_y_position(fun = "max", scales = "free") %>%
+  mutate(p.adj.signif = formatC(p.adj, format = "e", digits = 2)) 
+  
 
 # 7. Visualize results
 p.gene.per.cell <- 
   ggplot() +
-  geom_hline(yintercept = seq(0,20000,2000), linetype = "dashed", color = "darkgrey") + 
-  geom_violin(data =med, aes(x = name, y = value, fill = name)) +
+  geom_hline(yintercept = seq(0,7500,2500), color = "grey", linetype = "dashed") +
+  geom_violin(data = filter(med, name != "FS-UMI\nAll\nTranscripts"), aes(x = name, y = value, fill = name)) +
   facet_wrap("cell_type.internal", nrow = 2) +
-  geom_boxplot(data =med, aes(x = name, y = value, fill = name), width = 0.05) +
-  scale_fill_manual(values = c("FS-UMI\nAll\nTranscripts" = "#1B9E77",
+  geom_boxplot(data = filter(med, name != "FS-UMI\nAll\nTranscripts"), aes(x = name, y = value, fill = name), width = 0.05) +
+  ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}", step.increase = 0.025, step.group.by = "cell_type.internal", tip.length = 0.01, size = 4.5) +
+  scale_fill_manual(values = c(#"FS-UMI\nAll\nTranscripts" = "#1B9E77",
                                "FS-UMI\nAll\nGenes" = "#D95F02",
                                "FS-UMI\nInternal\nGenes" = "#7570B3", 
                                "FS-UMI\nUMI\nGenes" = "#E7298A",
                                "10x\nGenomics\nGenes" = "#2ac7c2")) +
   theme_bw(base_size = 24) +
-  theme(legend.position = "none", axis.text.x = element_blank()) + 
+  scale_y_continuous(breaks = seq(0,7500,2500)) + 
+  theme(legend.position = "none", 
+        axis.ticks.x = element_blank(), 
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank(),
+        axis.text.x = element_blank()) + 
   xlab("") + 
-  ylab("Detected Features") +
-  geom_segment(data = p.signif, aes(x = xstart, xend = xend, y=y,yend=y)) + 
-  geom_text(data = p.signif, aes(x = (xstart+xend)/2, y=y*1.0025, label = p.signif), size = 7) 
+  ylab("Genes Detected ") 
 
 # 8. Save
-ggsave(p.gene.per.cell, dpi = 200, height = 12, width = 24, bg = "white",
+ggsave(p.gene.per.cell, dpi = 450, height = 12, width = 21, bg = "white",
        filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_totalGenes.tiff")
 
-  
-ggsave(p.proportion, dpi = 200, height = 6, width = 6, bg = "white",
-       filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_proportions.tiff")
+# 9. Transcripts
+p.transcripts.per.cell <- 
+  ggplot() +
+  geom_hline(yintercept = seq(0,20000,2500), color = "grey", linetype = "dashed") +
+  geom_violin(data = filter(med, name == "FS-UMI\nAll\nTranscripts"), aes(x = cell_type.internal, y = value, fill = cell_type.internal)) +
+  geom_boxplot(data = filter(med, name  ==  "FS-UMI\nAll\nTranscripts"), aes(x = cell_type.internal, y = value, fill = cell_type.internal), width = 0.05) +
+  scale_fill_manual(values = celltype.colors()) +
+  theme_bw(base_size = 24) +
+  scale_y_continuous(breaks = seq(0,20000,2500)) + 
+  theme(legend.position = "none", 
+        axis.ticks.x = element_blank(), 
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank(),
+        axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  xlab("") + 
+  ylab("Transcripts Detected ") 
+
+ggsave(p.transcripts.per.cell, dpi = 450, width = 16, height = 10, bg = "white",
+       filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_totalTranscripts.tiff")
 
 
 # Minimal plot
@@ -1107,7 +1217,7 @@ ssce <- FindClusters(ssce, resolution = 1)
 DimPlot(ssce, group.by = "seurat_clusters")
 
 ggsave(DimPlot(ssce, group.by = "cell_type") + scale_color_manual(values = celltype.colors()), bg = "white",
-  dpi = 200, width = 10, height = 6, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/DimPlot.transcriptome.tiff")
+  dpi = 450, width = 10, height = 6, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/DimPlot.transcriptome.tiff")
 
 # 8. Get markers at the cell type level
 Idents(ssce) <- "cell_type"
@@ -1349,16 +1459,16 @@ PKM.coverage <- data.frame(PKM.coverage)
 row.names(PKM.coverage) <- paste0("X", PKM.coverage$ID)
 ssce.FS.all <- AddMetaData(ssce.FS.all, PKM.coverage)
 
-p.exon <- plot_grid(rel_widths = c(0.66,0.33),
+p.exon <- plot_grid(nrow = 2, rel_heights = c(0.475, 0.8),
                     FeaturePlot(ssce.FS.all  , c("exon9.norm", "exon10.norm"), ncol = 2) & 
                       scale_colour_gradientn(colours = c(NA, RColorBrewer::brewer.pal(n = 8, name = "YlGnBu"))) &
-                      theme(legend.position = "bottom", legend.text = element_text(angle = 45, hjust = 1)),
+                      theme(legend.position = "bottom", legend.text = element_text(angle = 45, hjust = 1), title = element_blank(), axis.text = element_text(size = 16), axis.title = element_text(size = 16)),
                     FeaturePlot(ssce.FS.all, c("ratio"), ncol = 1, max.cutoff = 5) & 
                       scale_colour_gradientn(colours = c(RColorBrewer::brewer.pal(n = 8, name = "Spectral"))) &
-                      theme(legend.position = "bottom", legend.text = element_text(angle = 45, hjust = 1)))
+                      theme(legend.position = "bottom", legend.text = element_text(angle = 45, hjust = 1), title = element_blank(),axis.text = element_text(size = 20), axis.title = element_text(size = 20)))
 
 
-ggsave(p.exon, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_PKM_exons.tiff", dpi = 200, height = 6, width = 16, bg = "white")
+ggsave(p.exon, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_PKM_exons.tiff", dpi = 450, height = 12, width = 8, bg = "white")
 
 VlnPlot(ssce.FS.all, c("ratio")) +
   scale_fill_manual(values = celltype.colors()) +
@@ -1728,10 +1838,10 @@ umi_internal[is.na(umi_internal)] <- 0
 
 # 2. Correlations
 mycors <- sapply(c("5000","10000","20000","40000","50000","75000","100000","125000","150000","200000"), function(x)
-  pcaPP::cor.fk(filter(umi_internal, DEPTH == x, internal >0 & umi>0)$internal, filter(umi_internal, DEPTH == x, internal >0 & umi>0)$umi))
+  broom::tidy(cor.test(method = "kendall", filter(umi_internal, DEPTH == x, internal >0 & umi>0)$internal, filter(umi_internal, DEPTH == x, internal >0 & umi>0)$umi)))
 
 mycors2 <- sapply(c("5000","10000","20000","40000","50000","75000","100000","125000","150000","200000"), function(x)
-  broom::tidy(cor.test(method = "pearson", filter(umi_internal, DEPTH == x, internal >0 & umi>0)$internal, filter(umi_internal, DEPTH == x, internal >0 & umi>0)$umi))$estimate)
+  broom::tidy(cor.test(method = "pearson", filter(umi_internal, DEPTH == x, internal >0 & umi>0)$internal, filter(umi_internal, DEPTH == x, internal >0 & umi>0)$umi)))
 
 mycors.df <- bind_cols(mycors %>%
                          data.frame() %>%
@@ -1765,7 +1875,7 @@ z <- ggplot() +
   ylim(c(0,7.5)) +
   geom_text(data = mycors.df, aes(x = 0, y = y, label = label), hjust = 0, size = 3.5)
   
-ggsave(z, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/correlation_umi_internal.tiff", bg = "white", dpi = 300, height = 7, width = 14)
+ggsave(z, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/correlation_umi_internal.tiff", bg = "white", dpi = 450, height = 7, width = 14)
 
 
 ```

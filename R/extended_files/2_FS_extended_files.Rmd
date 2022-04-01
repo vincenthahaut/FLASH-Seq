@@ -1,0 +1,1713 @@
+---
+title: "FastSmart - Figures"
+author: "V. Hahaut, D. Pavlinic & S. Picelli."
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: html_document
+---
+
+```{r Prerequisits, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
+
+options(scipen=999)
+
+# 1. LIBRARIES / FUNCTIONS
+library(SummarizedExperiment)
+library(tidyverse)
+library(cowplot)
+
+# 2. ANNOTATIONS
+gtf.path <- "/home/vincent.hahaut/data_storage/REFERENCES/hsap_fastsmart/REFERENCE/GTF/gencode.v34.primary_assembly.annotation.gtf"
+gtf <- rtracklayer::import(gtf.path)
+codingIDs <- gtf$gene_name[gtf$gene_type == "protein_coding"]
+
+# 3. COLORS
+mycolors <- as.vector(c(RColorBrewer::brewer.pal(name = "Dark2", 8),
+                        yarrr::piratepal("basel"), 
+                        yarrr::piratepal("nemo"), 
+                        yarrr::piratepal("appletv"), 
+                        yarrr::piratepal("pony"), 
+                        yarrr::piratepal("info"),
+                        yarrr::piratepal("decision")[-4],
+                        yarrr::piratepal("ipod")))
+
+methodPalette <- function(){scale_fill_manual(values = c("FS" = "#E41A1C",
+                                                         "SS2" = "#377EB8",
+                                                         "SS3" = "#4DAF4A",
+                                                         "SSsc" = "#984EA3")
+)}
+
+```
+
+
+```{r local functions, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
+
+#' processExpressGenes
+#' 
+#' Merge info from number of genes per cell and STAR mapping statistics
+#' First filtering of cells with shallow coverage
+#' @param mydata, data.frame generated with sceToExpressedGenes
+#' @param SAMPLESHEET, Global samplesheet containing all the details related to the sample preparation
+#' @param STAR.log, data.frame generated with getSTARLog
+processExpressGenes <- function(mydata = NULL, SAMPLESHEET = SAMPLESHEET, STAR.log = STAR.log){
+  depths <- c(5000,10000,20000,40000,50000,75000,100000,125000,250000,375000,500000,625000,750000,1000000,1250000,1500000)
+    
+  mydata %>%
+    mutate(oldID = ID,
+           ID = str_replace(ID, "^X", ""),
+           DEPTH = str_extract(ID, paste0(paste0("_", depths, "_"), collapse = "|")),
+           DEPTH = str_replace_all(DEPTH, "_", ""),
+           TIMES = str_extract(ID, ".$"),
+           ID = str_replace(ID, paste0("_", depths, "_1", collapse = "|"), ""),
+           ID = str_replace_all(ID, "\\.", "-")) %>%
+    left_join(SAMPLESHEET, by = c("ID" = "FASTQ_ID")) %>%
+    left_join(STAR.log, by = "ID") %>%
+    filter(as.numeric(N_raw_reads) > 100000, as.numeric(N_uniquely_mapped_reads) > 50000) %>%
+    return()
+}
+
+
+#' summaryPlots
+#' 
+#' Quick graphic summary of a sequencing condition
+#' Returns information regarding 
+#' condition are defined in the "NAME" column
+#' @param mydata, data.frame generated with sceToExpressedGenes
+#' @param title, Suffix of the graph name (save)
+#' @param mycols, ggplot scale_color_manual() compatible condition to color (e.g., c("CONDITION_A" = "blue"))
+
+summaryPlots <- function(mydata = mydata, title = NULL, mycols = NULL){
+  
+  # 1. Gene counts
+  
+  # 1.1. Statistical test
+  # Shapiro.test always reject the normal distribution
+  # Kruskall (>2 conditions) or mann-whitney (= 2 conditions)
+  if(length(unique(mydata$NAME)) > 2){
+    
+    if(broom::tidy(kruskal.test(mydata$count_0, mydata$NAME))$p.value < 0.05){
+      mytest <- mydata %>%
+        rstatix::dunn_test(count_0 ~ NAME, p.adjust.method = "bonferroni")%>%
+        rstatix::add_y_position(fun = "max", scales = "free") %>%
+        mutate(p.adj.signif = formatC(p, format = "e", digits = 2))
+      
+      y <- min(diff(mytest$y.position))
+      mytest <- mytest %>% 
+        filter(p.adj < 0.05) %>%
+        mutate(y.position = seq(min(y.position), (min(y.position)+y*(n()-1)), y))
+    } else {
+      mytest <- mydata %>%
+        rstatix::dunn_test(count_0 ~ NAME, p.adjust.method = "bonferroni")%>%
+        rstatix::add_y_position(fun = "max", scales = "free") %>%
+        mutate(p.adj.signif = formatC(p, format = "e", digits = 2)) %>%
+        filter(p.adj < 0.05)
+
+    }
+  } else {
+
+      mytest <- mydata %>%
+        rstatix::wilcox_test(count_0 ~ NAME) %>%
+        rstatix::add_y_position(fun = "max", scales = "free") %>%
+        mutate(p.adj.signif = formatC(p, format = "e", digits = 2)) %>%
+        filter(p < 0.05)
+
+  }
+  
+  # 1.2. Display the gene counts
+  p.gene <- ggplot() +
+    geom_hline(yintercept = seq(0,max(mydata$count_0)*1.1,1000), linetype = "dotted", color = "darkgrey") +
+    geom_violin(data = mydata, aes(y = count_0, x = NAME, fill = reorder(NAME, count_0, median))) +
+    geom_boxplot(data = mydata, aes(y = count_0, x = NAME, fill = reorder(NAME, count_0, median)), width=0.1) +
+    ggpubr::stat_pvalue_manual(mytest, label = "p = {p.adj.signif}", step.increase = 0.05, tip.length = 0.01, size = 6) +
+    scale_fill_manual(values = mycols) +
+    scale_y_continuous(breaks = seq(0,max(mydata$count_0)*1.1,1000), labels = as.character(formatC(seq(0,max(mydata$count_0)*1.1,1000), format="d", big.mark=",") )) +
+    scale_color_brewer(palette = "Dark2") +
+    ylab(" Genes Detected") + 
+    xlab("") +
+    theme_cowplot(font_size = 28) +
+    theme(legend.position = "none", 
+          legend.title = element_blank(),
+          panel.background = element_rect(color = "white"),
+          plot.background = element_rect(color = "white"),
+          axis.text.y = element_text(size = 22), 
+          axis.text.x = element_text(size = 20),
+          axis.title = element_text(size = 24),
+          legend.text = element_text(size = 18)) +
+    geom_text(data = mydata, aes(y = 0, x = NAME, label=paste0("n = ", ..count..)), y=0, stat='count', size=6)
+
+  
+  # 2. ReSQC read tag distribution
+  p.resqc <- filter(resqc, ID %in% mydata$ID) %>%
+    select(ID, UTR3_Exons, UTR5_Exons, CDS_Exons, Introns, TES_down_10kb, TSS_up_10kb, totalReadTags) %>%
+    mutate(Intergenic = totalReadTags - UTR3_Exons - UTR5_Exons - CDS_Exons - Introns) %>%
+    gather(key, val, -ID, -totalReadTags) %>%
+    mutate(perc = 100*val/totalReadTags) %>%
+    left_join(mydata %>% select(NAME, ID), by = "ID") %>%
+    mutate(key = case_when(key == "UTR5_Exons" ~ "5'UTR Exons",
+                           key == "UTR3_Exons" ~ "3'UTR Exons",
+                           key == "CDS_Exons" ~ "CDS Exons",
+                           key == "Introns" ~ "Introns",
+                           key == "Intergenic" ~ "Intergenic",
+                           key == "TES_down_10kb" ~ "TES_down_10kb",
+                           key == "TSS_up_10kb" ~ "TSS_up_10kb"),
+           key = factor(as.factor(key), levels = c("TES_down_10kb", "TSS_up_10kb", "3'UTR Exons", "5'UTR Exons", "Intergenic", "Introns", "CDS Exons"))) %>%
+    # TES / TSS info as they usually bring little info
+    filter(!key %in% c("TES_down_10kb", "TSS_up_10kb")) %>%
+    ggplot(aes(y = NAME, x = perc, fill = NAME)) +
+    geom_violin() +
+    geom_boxplot(width = 0.1) +
+    theme_cowplot(font_size = 28) +
+    facet_wrap("key", scales = "free_x", nrow = 1) +
+    scale_fill_manual(values = mycols) +
+    theme(axis.text.x = element_text(size = 20),
+          legend.position = "none",
+          strip.text = element_text(size = 24, face = "bold"),
+          panel.background = element_rect(color = "white"),
+          plot.background = element_rect(color = "white"),
+          rect = element_rect(size = 0.75, color = "black"), 
+          panel.border = element_rect(size = 0.75, color = "black"), 
+          panel.grid.major.x = element_line(linetype = "dotted", color = "darkgrey", size = 0.5),
+          axis.line.y.right = element_line(color = "black", linetype = "solid", size = 1)) +
+    ylab("") +
+    xlab("Read Tags (%)") 
+  
+  # 3. STAR mapping statistics
+  p.star <- select(mydata, NAME, P_uniquely_mapped_reads, P_multiple_Loci, P_too_short_read) %>%
+    gather(key, val, -NAME) %>%
+    mutate(key = case_when(key == "P_uniquely_mapped_reads" ~ "Uniquely Mapped", 
+                           key == "P_multiple_Loci" ~ "Multi-Mapped", 
+                           key == "P_too_short_read" ~ "Unmapped"),
+           key = factor(as.factor(key), levels = c("Uniquely Mapped", "Multi-Mapped", "Unmapped")),
+           FILL = paste(key, NAME)) %>%
+    mutate(val = as.numeric(as.character(val))) %>%
+    ggplot(aes(x = NAME, y = val, fill = NAME)) +
+    geom_violin() +
+    geom_boxplot(width = 0.1) +
+    ylab("Reads (%)") +
+    xlab("") +
+    facet_wrap("key", nrow = 1, scales = "free_y") +
+    theme_cowplot(font_size = 28) +
+    theme(legend.position = "none",
+          panel.background = element_rect(color = "white"),
+          plot.background = element_rect(color = "white"),
+          rect = element_rect(size = 0.75, color = "black"), 
+          strip.text = element_text(size = 18, face = "bold"),
+          panel.border = element_rect(size = 0.75, color = "black"), 
+          axis.text.x = element_text(size = 20, angle = 45, hjust = 1),
+          panel.grid.major.y = element_line(linetype = "dotted", color = "darkgrey", size = 0.5),
+          axis.line.y.right = element_line(color = "black", linetype = "solid", size = 1)) +
+    scale_fill_manual(values = mycols) 
+  
+  # 4. Combine and save the graphics
+  ggsave(bg = "white",
+         plot_grid(
+           plot_grid(p.gene, p.star, 
+                     nrow = 1, labels = c("a", "b"), label_size = 28, rel_widths = c(0.32, 0.67)), 
+           p.resqc, nrow = 2, label_size = 28, labels = c("", "c")) + theme(panel.background = element_rect(color = "white"),
+                                                                            plot.background = element_rect(color = "white")), 
+         filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/", title, ".tiff"),
+         dpi = 450, width = 32, height = 20)
+  
+  return(list(p.gene, p.star,p.resqc))
+}
+
+```
+
+
+# 1. dCTP
+
+```{r Load Data dctp, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
+
+
+# 0. Load the global sample sheet
+SAMPLESHEET <- read.delim("/home/vincent.hahaut/Desktop/GITHUB/IOB/sampleSheet/FS_GLOBAL_SAMPLESHEET_17112021.txt", sep = "\t") %>%
+  filter(RUN_DATE %in% c("6092021"))
+
+# Limit the search to cells processed before the first biorxiv version:
+index <- SAMPLESHEET$FASTQ_ID[SAMPLESHEET$RUN_DATE %in% c("6092021")]
+
+# 1. STAR - Statistics (getSTARlog)
+STAR.log <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/STAR.logs.2021-12-05.rds.bz") %>% 
+  filter(ID %in% index)
+
+# 2. MEDIAN GENE COUNTS - FEATURECOUNTS - DOWNSAMPLINGS (sceToExpressedGenes)
+med.exon <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/downsampling_medianGenes_featureCounts.exon.all.2021-12-05.rds.bz") %>%
+  processExpressGenes(mydata = ., SAMPLESHEET = SAMPLESHEET, STAR.log = STAR.log) 
+
+med.gene <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/downsampling_medianGenes_featureCounts.genes.all.2021-12-05.rds.bz") %>%
+  processExpressGenes(mydata = ., SAMPLESHEET = SAMPLESHEET, STAR.log = STAR.log) 
+
+# 3. RAW SCE OBJECTS
+# SingleCellObject containing the read counts associated to each cell
+sce <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/downsampling_featureCounts.exon.all.2021-12-05.rds.bz") 
+
+# 4. Salmon (sceToExpressedGenes)
+# Downsampled to 250 or 500K raw reads
+sce.sal.500K.med <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/downsampling_medianGenes_salmon.all.500000.2022-03-25.rds.bz")
+# sce.sal.250K.med <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/downsampling_medianGenes_salmon.all.250000.2021-12-05.rds.bz")
+
+# 5. RESQC - READ DISTRIBUTION (getRESeQC_readDistribution)
+resqc <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/ReSQC.distribution.2021-12-05.rds.bz") %>% 
+  filter(ID %in% index)
+
+# 6. RESQC - GENE BODY COVERAGES (getRESeQC_coverage)
+cover <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/ReSQC.coverage.2021-12-05.rds.bz") %>% 
+  filter(ID %in% index)
+
+
+# 7. CHR-WIDE READ DISTRIBUTIONS
+# mito <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/mitochondrial.reads. 2022-01-10 .rds.bz")
+
+# 10. GC content
+GC.log <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/GC.logs.2022-01-10.rds.bz")
+
+```
+
+```{r Suppl. dCTP, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
+
+# 1. cDNA Yield
+
+# 1.1. Load data
+yield <- read_tsv("/home/vincent.hahaut/data_storage/transfer/Mendeley/cDNA Yields/FS_HEK_cDNAYield_dCTP.txt", col_names = TRUE) %>% 
+  mutate(dCTP = ifelse(dCTP != "no dCTP", str_replace(dCTP, " dCTP", ""), "no dCTP"),
+         dCTP = factor(dCTP, levels = c("no dCTP", "1.65 mM", "3.3 mM", "5.5 mM", "8.25 mM", "11 mM"))) %>%
+  filter(!is.na(Yield))
+
+# 1.2. Compare groups
+
+# Normality is not guarantied (shapiro)
+p.signif <- rstatix::dunn_test(yield, Yield ~ dCTP, p.adjust.method = "bonferroni") %>%
+    filter(p.adj < 0.05) %>%
+    rstatix::add_xy_position() %>%
+    mutate(p.adj.signif = formatC(p.adj, format = "e", digits = 2),
+           y.position = seq(32.5, 43.7, 1.4))
+
+# 1.3. Visualize
+pA <- ggplot() +
+  geom_hline(yintercept = seq(0,30,5), linetype = "dotted", color = "darkgrey") + 
+  geom_boxplot(data = yield, aes(x = dCTP, y = Yield, fill = dCTP), width = 0.8) +
+  theme_cowplot(font_size = 24) +
+  theme(legend.position = "none", 
+        panel.background = element_rect(fill = "white"),
+        plot.background = element_rect(fill = "white")) +
+  xlab("Extra dCTP") +
+  scale_y_continuous(breaks = seq(0,30,10)) +
+  ylab("cDNA Yield (ng/µL)") +
+  scale_fill_manual(values = c(
+  "no dCTP" =  "#FFFFCC",
+  "1.65 mM" = "#A1DAB4",
+  "3.3 mM" = "#E41A1C",  
+  "5.5 mM" = "#41B6C4",
+  "8.25 mM" = "#2C7FB8",
+  "11 mM" = "#253494")) +
+  geom_text(data = data.frame(), aes(x = levels(yield$dCTP) , y = 0, 
+                                     label = paste("n =", table(yield$dCTP)))) +
+   ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}", step.increase = 0.025, tip.length = 0.01, size = 5) 
+
+ggsave(pA, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_cDNA_yield_dCTP.tiff", dpi = 450, height = 7, width = 12)
+
+# 2. Summary Plot
+mydata <- med.exon %>%
+  filter(PLATE == "309") %>%
+  mutate(NAME = paste0(dCTP, " mM"),
+         NAME = ifelse(NAME == "0 mM", "no dCTP", NAME),
+         NAME = factor(NAME, levels = c("no dCTP", "1.65 mM", "3.3 mM", "5.5 mM", "8.25 mM", "11 mM"))) %>%
+  filter(!is.na(NAME), DEPTH == "250000")
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+summaryPlots(mydata = mydata, title = "dCTP", mycols = c(
+  "no dCTP" =  "#FFFFCC",
+  "1.65 mM" = "#A1DAB4",
+  "3.3 mM" = "#E41A1C",  
+  "5.5 mM" = "#41B6C4",
+  "8.25 mM" = "#2C7FB8",
+  "11 mM" = "#253494"))
+
+# 3. GC Content
+
+# 3.1. Load the gene GC info
+gc.perc <- read.table(file="/home/vincent.hahaut/data_storage/REFERENCES/hsap_fastsmart/REFERENCE/GTF/gencode.v34.exon.GC_lengths.tsv", header = T, sep="\t")
+
+# 3.2. Get the gene expressed in at least 3 cells
+HEK.expressed.genes <- row.names(sce)[rowSums(counts(sce[,colnames(sce) %in% paste0("X", mydata$ID, "_250000_1")]) > 0) >= 3]
+
+# 3.3. Mean cell GC content
+gc.mean <- mean(100*gc.perc$GC[gc.perc$gene_name %in% HEK.expressed.genes])
+ 
+# 3.4. Aggregate results
+gc.perc <- GC.log %>%
+    right_join(
+        dplyr::select(mydata, ID, NAME), by = "ID") %>%
+  group_by(ID) %>%
+  mutate(total = sum(read_count),
+         perc = 100*read_count/unique(total)) 
+  
+# 3.5. Visualize
+GC.proportion <- ggplot() +
+  geom_hline(yintercept = 0, linetype = "dotted") + 
+  geom_vline(xintercept = gc.mean, linetype = "dashed", color = "red") + 
+  geom_smooth(data = gc.perc, aes(y = perc, x = `GC%`, color = NAME, fill = NAME), 
+              size = 1.5, alpha = 0.05) +
+    theme_cowplot(font_size = 24) +
+    theme(legend.title = element_blank(),
+          panel.background = element_rect(fill = "white"),
+          plot.background = element_rect(fill = "white")) +
+  xlab("GC (%)") +
+  ylab("Mapped Reads (%)") +
+  scale_fill_manual(values = c(
+  "no dCTP" =  "#FFFFCC",
+  "1.65 mM" = "#A1DAB4",
+  "3.3 mM" = "#E41A1C",  
+  "5.5 mM" = "#41B6C4",
+  "8.25 mM" = "#2C7FB8",
+  "11 mM" = "#253494")) +
+  scale_color_manual(values = c(
+  "no dCTP" =  colorspace::darken("#FFFFCC", 0.2),
+  "1.65 mM" =  colorspace::darken("#A1DAB4", 0.2),
+  "3.3 mM" =  colorspace::darken("#E41A1C", 0.2), 
+  "5.5 mM" =  colorspace::darken("#41B6C4", 0.2),
+  "8.25 mM" =  colorspace::darken("#2C7FB8", 0.2),
+  "11 mM" =  colorspace::darken("#253494", 0.2))) 
+
+ggsave(GC.proportion, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_GCprop.tiff", dpi = 450, height = 7, width = 12, bg = "white")
+
+# 4. Differential Expression
+
+# 4.1. Get the counts from the cell of interest
+HEK.GC.sce <- sce[,colnames(sce) %in% mydata$oldID]
+
+# 4.2. Normalize count matrix (log + size factor)
+lib.sf <- scater::librarySizeFactors(HEK.GC.sce)
+HEK.GC.sce <- scater::logNormCounts(HEK.GC.sce, size_factors=lib.sf)
+
+# 4.3. Add groups
+HEK.GC.sce$GROUP <- str_replace(mydata$NAME, "\\.|\\ ", "_")[match(colnames(HEK.GC.sce), mydata$oldID)]
+
+# 4.4. Filter out low quality cells
+HEK.GC.sce <- HEK.GC.sce[rowSums(counts(HEK.GC.sce) > 0) >= 5,]
+DE <- scran::findMarkers(HEK.GC.sce, test.type = "t", groups = HEK.GC.sce$GROUP)
+
+# 4.5. Get the "no dCTP" as reference
+DE.nodCTP <- DE[[6]]
+
+# 4.6. Aggregate results
+gc.perc <- read.table(file="/home/vincent.hahaut/data_storage/REFERENCES/hsap_fastsmart/REFERENCE/GTF/gencode.v34.exon.GC_lengths.tsv", header = T, sep="\t")
+DE.nodCTP <- DE.nodCTP %>%
+  as.data.frame() %>%
+    rownames_to_column("gene_name") %>%
+    left_join(gc.perc, by = "gene_name") %>%
+    select(-Top, -p.value, -FDR, -summary.logFC) %>%
+  pivot_longer(cols = c("logFC.1_65.mM", "logFC.11_mM", "logFC.3_3.mM", "logFC.5_5.mM", "logFC.8_25.mM"), 
+               values_to = "logFold") %>%
+  mutate(CATEGORY = ifelse(logFold < -1, "DE", "not\nDE"),
+         GC = 100*GC) %>%
+  mutate(name = case_when(
+    name == "logFC.1_65.mM" ~ "1.65 mM", 
+    name == "logFC.11_mM" ~ "11 mM", 
+    name == "logFC.3_3.mM" ~ "3.3 mM", 
+    name == "logFC.5_5.mM" ~ "5.5 mM", 
+    name == "logFC.8_25.mM" ~ "8.25 mM")) %>%
+  # Add the GC percentage of the expressed genes in no dCTP condition
+  mutate(name = factor(name, levels = c("no dCTP", "1.65 mM", "3.3 mM", "5.5 mM", "8.25 mM", "11 mM")))
+
+# 4.7. Compare groups
+# paired wilcoxon
+p.signif <- DE.nodCTP %>%
+  group_by(name) %>%
+   rstatix::wilcox_test(GC ~ CATEGORY, p.adjust.method = "bonferroni") %>%
+    mutate(p.adj = p.adjust(p, "bonferroni")) %>%
+    filter(p.adj < 0.05) %>%
+   rstatix::add_xy_position() %>%
+    mutate(p.adj.signif = formatC(p.adj, format = "e", digits = 2))
+
+# 4.8. Visualize results
+p.GC.log <- ggplot() +
+  geom_hline(yintercept = seq(0,100,10), linetype = "dashed", color = "darkgrey") +
+  geom_boxplot(data = DE.nodCTP, aes(x = CATEGORY, y = GC, fill = CATEGORY), width = 0.5) +
+  scale_fill_brewer(palette = "Set1") +
+  theme_bw(base_size = 24) +
+  facet_wrap("name", nrow = 1) +
+  ylab("GC%") +
+  xlab("Extra dCTP") +
+  theme(legend.title = element_blank(), legend.position = "none") +
+  ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}", tip.length = 0.01, size = 5)
+
+ggsave(p.GC.log, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_GC_DE_dCTP.tiff", dpi = 450, height = 7, width = 12, bg = "white")
+
+
+# 5. Gene Coverage
+
+# 5.1. Aggregate
+mycover <- right_join(cover, mydata %>% select(ID, NAME), by = "ID") %>%
+  gather(Percentile, reads, -ID, -NAME) %>%
+  filter(reads > 0) %>%
+  group_by(ID) %>%
+  mutate(percentage = 100*reads / sum(reads)) %>%
+  group_by(NAME, Percentile) %>%
+  summarise(mean.c = mean(percentage),
+            sd.c = sd(percentage)) %>%
+  ungroup() 
+  
+# 5.2. Visualize
+p.cover <- ggplot(mycover, aes(x = as.numeric(Percentile), color = as.factor(NAME), fill = as.factor(NAME))) +
+  geom_ribbon(aes(ymin = mean.c - sd.c, ymax = mean.c + sd.c), colour = NA) +
+  geom_line(aes(y=mean.c), size = 1.25) +
+  theme_cowplot(font_size = 24) +
+  scale_fill_manual(values = c(
+  "no dCTP" =  "#FFFFCC",
+  "1.65 mM" = "#A1DAB4",
+  "3.3 mM" = "#E41A1C",  
+  "5.5 mM" = "#41B6C4",
+  "8.25 mM" = "#2C7FB8",
+  "11 mM" = "#253494")) +
+  scale_color_manual(values = c(
+  "no dCTP" =  colorspace::darken("#FFFFCC", 0.2),
+  "1.65 mM" =  colorspace::darken("#A1DAB4", 0.2),
+  "3.3 mM" =  colorspace::darken("#E41A1C", 0.2), 
+  "5.5 mM" =  colorspace::darken("#41B6C4", 0.2),
+  "8.25 mM" =  colorspace::darken("#2C7FB8", 0.2),
+  "11 mM" =  colorspace::darken("#253494", 0.2))) +
+  xlab("Gene Body Percentile (5'->3')") +
+  ylab("Coverage (%)") +
+  theme(legend.title = element_blank()) + 
+  theme(strip.background = element_blank(),
+        strip.text = element_text(face = "bold"))
+  
+ggsave(p.cover, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/dCTP_COVERAGE.tiff"), dpi = 300, height = 6, width = 10, bg = "white")
+
+# 6. Per-base Mismatches
+
+# 6.1. Aggregate
+mismatches <- STAR.log %>%
+  right_join(
+    select(mydata, ID, NAME), by = "ID") %>%
+  mutate(P_mismatch = 100*as.numeric(P_mismatch))
+
+# 6.2. Statistical significance
+p.signif <- mismatches %>%
+   rstatix::dunn_test(P_mismatch ~ NAME, p.adjust.method = "bonferroni") %>%
+    filter(p.adj < 0.05) %>%
+   rstatix::add_xy_position() %>%
+    mutate(p.adj.signif = formatC(p.adj, format = "e", digits = 2))
+
+
+# 6.3. Visualize
+p.mismatches <- ggplot() + 
+  geom_hline(yintercept = seq(40,70,5), linetype = "dotted", color = "darkgrey") + 
+  geom_boxplot(data = mismatches, aes(x = NAME, y = P_mismatch, fill = NAME), width = 0.8) +
+  theme_cowplot(font_size = 16) +
+  theme(legend.position = "none", 
+        panel.background = element_rect(fill = "white"),
+        plot.background = element_rect(fill = "white")) +
+  xlab("Extra dCTP") +
+  ylab("Mismatch Per 100K Mapped Base") +
+  scale_fill_manual(values = c(
+  "no dCTP" =  "#FFFFCC",
+  "1.65 mM" = "#A1DAB4",
+  "3.3 mM" = "#E41A1C",  
+  "5.5 mM" = "#41B6C4",
+  "8.25 mM" = "#2C7FB8",
+  "11 mM" = "#253494")) +
+  scale_y_continuous(breaks = seq(40,65,5))+ 
+  stat_summary(fun.data = function(x){return(data.frame(y = 0, label = paste0("n =", length(x))))}, geom = "text", 
+                   position = position_dodge(width = 0.75), size = 5) +
+  ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}", step.increase = 0.025, tip.length = 0.01, size = 5)
+
+ggsave(p.mismatches, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_mismatches.tiff", dpi = 450, height = 7, width = 8)
+
+# 7. Variant Calling
+
+# 7.1. Load the VCF
+vcf <- lapply(list.files("/home/vincent.hahaut/data_storage/210906_NB551561_0058_AH5MLFBGXK/VARIANTS/", pattern = ".GATK.ALL.vcf", recursive = T, full.names = TRUE), function(x) vcfR::read.vcfR(x))
+vcf.id <- list.files("/home/vincent.hahaut/data_storage/210906_NB551561_0058_AH5MLFBGXK/VARIANTS/", pattern = ".GATK.ALL.vcf", recursive = TRUE, full.names = FALSE) %>% str_extract(pattern = ".*/") %>% str_replace("\\/STAR\\/", "")
+
+# 7.2 Filter VCF and tidy
+vcf <- lapply(seq_along(vcf), function(x)
+  vcfR::vcfR2tidy(vcf[[x]], format_fields = c("GT", "DP"))$fix %>%
+    mutate(ID = vcf.id[x],
+           GROUP = case_when(
+             grepl("309_NOdCTP", vcf.id[x]) ~ "no dCTP",
+             grepl("309_dCTP1-5x", vcf.id[x]) ~ "1.65 mM",
+             grepl("309_dCTP3x", vcf.id[x]) ~ "3.3 mM",
+             grepl("309_dCTP5x", vcf.id[x]) ~ "5.5 mM",
+             grepl("309_dCTP7-5x", vcf.id[x]) ~ "8.25 mM",
+             grepl("309_dCTP10x", vcf.id[x]) ~ "11 mM")))
+  
+vcf.all <- lapply(vcf, function(x ) x %>% 
+                    dplyr::select(ChromKey,CHROM,POS,ID,REF,ALT,QUAL,DP,AF1,GROUP, VDB)) %>% bind_rows %>%
+  filter(nchar(REF) == 1 & nchar(ALT) == 1)
+
+# NOT USED ==> too complicated to interpret with the current data
+# 7.3. Trinucleotide Context
+# gr <- GenomicRanges::makeGRangesFromDataFrame(vcf.all[,c("CHROM", "POS", "REF", "ALT")], keep.extra.columns = TRUE, seqnames.field = "CHROM", start.field = "POS", end.field = "POS")
+# vr <- VariantAnnotation::VRanges(seqnames = seqnames(gr), ranges = IRanges(start(gr), end(gr)), ref = gr$REF, alt = gr$ALT)
+# vr <- SomaticSignatures::mutationContext(vr, Rsamtools::FaFile("/home/vincent.hahaut/data_storage/REFERENCES/hsap_fastsmart/REFERENCE/DNA/GRCh38.primary_assembly.genome.fa"))
+# vr.tidy <- as_tibble(vr) %>% 
+#   mutate(REF.tri = str_replace(context, "\\.", ref),
+#          ALT.tri = str_replace(context, "\\.", alt))
+
+# vcf.all$REF.tri <- vr.tidy$REF.tri
+# vcf.all$ALT.tri <- vr.tidy$ALT.tri
+# vcf.all$SUBSTITUTION <- sapply(str_split(vr.tidy$alteration, ""), function(x) paste0(x[1], ">", x[2]))
+
+
+# 7.5. Aggregate results
+vcf.all.tidy <- vcf.all %>%
+    mutate(CATEGORY = paste0(REF, "->", ALT),
+           quality = case_when(
+               QUAL >= 20 & DP > 4 ~ "QUAL ≥ 20 & DP > 4",
+               TRUE ~ "QUAL < 20"),
+           GROUP = factor(GROUP, levels = c("no dCTP", "1.65 mM", "3.3 mM", "5.5 mM", "8.25 mM", "11 mM")),
+           quality = factor(quality, levels = c("QUAL ≥ 20 & DP > 4", "QUAL < 20"))) %>%
+    filter(!grepl(",", ALT)) %>%
+    group_by(ID) %>%
+    mutate(total.var = n()) %>%
+    ungroup() %>%
+    filter(total.var > 100) %>% 
+    group_by(ID, CATEGORY, GROUP, quality) %>% 
+    summarise(n = 100*n()/unique(total.var)) %>%
+    ungroup() %>%
+    mutate(CATEGORY=factor(CATEGORY, levels = c("C->G","G->C","A->T","T->A","G->T","C->A","A->C","T->G","T->C","A->G","G->A","C->T")))
+
+# 7.4. Compare the % of the different variants
+vcf.stats <- vcf.all.tidy %>% 
+  mutate(TYPE = ifelse(grepl("->C|->G", CATEGORY), "->C/G", "->A/T"))
+
+# 7.6. Visualize - Percentage of each substitution
+p.Cmut <- ggplot(data = vcf.all.tidy, aes(x = GROUP, fill = CATEGORY, y = n)) +
+    geom_boxplot(outlier.size = 0.5) +
+    theme_bw(base_size = 28) +
+    xlab("Extra dCTP") +
+    ylab("Substitutions") +
+    theme(legend.title = element_blank(), 
+          panel.background = element_rect(fill = "white"),
+          plot.background = element_rect(fill = "white")) +
+    scale_fill_manual(values = mycolors) +
+    scale_color_manual(values = mycolors) +
+    facet_wrap(~quality, nrow = 2, scales = "free_y") 
+
+
+# 8. Total number of detected variants per 100K reads
+
+# 8.1. Aggregate
+vcf.total.tidy <- vcf.all %>% 
+  mutate(ID = str_replace(ID, "\\/", "")) %>%
+    left_join(STAR.log %>% dplyr::select(ID, N_uniquely_mapped_reads), by = "ID") %>%
+    mutate(CATEGORY = paste0(REF, "->", ALT),
+           quality = case_when(
+               QUAL >= 20 & DP > 4 ~ "QUAL ≥ 20 & DP > 4",
+               TRUE ~ "QUAL < 20"),
+           GROUP = factor(GROUP, levels = c("no dCTP", "1.65 mM", "3.3 mM", "5.5 mM", "8.25 mM", "11 mM")),
+           quality = factor(quality, levels = c("QUAL ≥ 20 & DP > 4", "QUAL < 20"))) %>%
+    filter(!grepl(",", ALT)) %>%
+    group_by(ID, GROUP, quality) %>%
+    mutate(total.var = 100000*n()/as.numeric(N_uniquely_mapped_reads)) %>%
+    ungroup() %>%
+  dplyr::select(GROUP, quality, total.var) %>% distinct()
+
+# 8.1. Compare groups
+p.signif <- vcf.total.tidy %>%
+  group_by(quality) %>%
+  rstatix::wilcox_test(total.var ~ GROUP, p.adjust.method = "bonferroni", ref.group = "no dCTP") %>%
+  filter(p.adj < 0.05) %>%
+  rstatix::add_xy_position() %>%
+  mutate(p.adj.signif = formatC(p.adj, format = "e", digits = 2),
+         y.position = c(seq(100,132,8), seq(2500,3500,250)))
+
+# 8.2. Visualize
+p.Cmut.Total <- ggplot(data = vcf.total.tidy, aes(x = GROUP, fill = quality, y = total.var)) +
+    geom_boxplot(outlier.size = 0.5, width = 0.75) +
+    theme_bw(base_size = 28) +
+    xlab("Extra dCTP") +
+    ylab("Substitutions Per 100K\nUniquely Mapped Reads") +
+    theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1),
+          panel.background = element_rect(fill = "white"),
+          plot.background = element_rect(fill = "white")) +
+    scale_fill_manual(values = mycolors) +
+    scale_color_manual(values = mycolors) +
+    facet_wrap(~quality, nrow = 2, scales = "free_y") +
+    ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}", tip.length = 0.01, size = 5) 
+
+
+ggsave(p.Cmut.Total, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_Ctransitions.total.tiff", dpi = 450, bg = "white", height = 12, width = 8)
+ggsave(p.Cmut, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_Ctransitions.tiff", dpi = 450, bg = "white", height = 12, width = 24)
+
+
+
+# 9. Trinucleotide Context 
+# trinucl <- vcf.all %>%
+#     mutate(CATEGORY = paste0(REF.tri, "->", ALT.tri),
+#            quality = case_when(
+#               QUAL >= 20 & DP > 4 ~ "QUAL ≥ 20 & DP > 4",
+#                TRUE ~ "QUAL < 20"),
+#            GROUP = factor(GROUP, levels = c("no dCTP", "1.65 mM", "3.3 mM", "5.5 mM", "8.25 mM", "11 mM")),
+#            quality = factor(quality, levels = c("QUAL ≥ 20 & DP > 4", "QUAL < 20"))) %>%
+#     filter(!grepl(",", ALT)) %>%
+#    group_by(ID) %>%
+#     mutate(total.var = n()) %>%
+#     ungroup() %>%
+#     filter(total.var > 100) %>% 
+#   group_by(ID, CATEGORY, GROUP, quality, SUBSTITUTION, total.var) %>% 
+#     summarise(perc = 100*n()/unique(total.var)) %>%
+#     ungroup() %>%
+#   group_by(CATEGORY, quality) %>% 
+#   mutate(med = median(perc[GROUP == "3.3 mM"]/median(perc[GROUP == "no dCTP"])),
+#          n = n()) %>%
+#   ungroup() %>% 
+#   filter(med > 1.5 | med < 0.50, n > 20)
+
+# p.trinucl <- ggplot(trinucl) +
+#     geom_boxplot(aes(x = CATEGORY, fill = GROUP, y = perc)) +
+#     theme_bw(base_size = 18) +
+#     xlab("Extra dCTP") +
+#     ylab("Variants (%)") +
+#     theme(legend.title = element_blank(), 
+#           panel.background = element_rect(fill = "white"),
+#         plot.background = element_rect(fill = "white")) +
+#     scale_fill_manual(values = mycolors) +
+#     facet_wrap(~quality+SUBSTITUTION, nrow = 2, scales = "free") +
+#   theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 12))
+
+# ggsave(p.trinucl, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_Ctransitions.tri.tiff", dpi = 300, bg = "white", height = 18, width = 36)
+
+
+```
+
+```{r Load Data, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
+
+
+# 0. Load the global sample sheet
+SAMPLESHEET <- read.delim("/home/vincent.hahaut/Desktop/GITHUB/IOB/sampleSheet/FS_GLOBAL_SAMPLESHEET_17112021.txt", sep = "\t") %>%
+  filter(RUN_DATE %in% c("4092020","17072020","22062020","28072020","3092020","5102020","30102020","13112020","22012021","9032021","23032021","28042021","17062021"  ))
+
+GTP <-  "12112021"
+
+# Limit the search to cells processed before the first biorxiv version:
+index <- SAMPLESHEET$FASTQ_ID[SAMPLESHEET$RUN_DATE %in% c("4092020","17072020","22062020","28072020","3092020","5102020","30102020","13112020","22012021","9032021","23032021","28042021","17062021")]
+   #)]
+# 1. STAR - Statistics (getSTARlog)
+STAR.log <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/STAR.logs.2021-12-05.rds.bz") %>% 
+  filter(ID %in% index)
+
+# 2. MEDIAN GENE COUNTS - FEATURECOUNTS - DOWNSAMPLINGS (sceToExpressedGenes)
+med.exon <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/downsampling_medianGenes_featureCounts.exon.all.2021-12-05.rds.bz") %>%
+  processExpressGenes(mydata = ., SAMPLESHEET = SAMPLESHEET, STAR.log = STAR.log) 
+
+med.gene <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/downsampling_medianGenes_featureCounts.genes.all.2021-12-05.rds.bz") %>%
+  processExpressGenes(mydata = ., SAMPLESHEET = SAMPLESHEET, STAR.log = STAR.log) 
+
+# 3. RAW SCE OBJECTS
+# SingleCellObject containing the read counts associated to each cell
+sce <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/downsampling_featureCounts.exon.all.2021-12-05.rds.bz") 
+
+# 4. Salmon (sceToExpressedGenes)
+# Downsampled to 250 or 500K raw reads
+sce.sal.500K.med <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/downsampling_medianGenes_salmon.all.500000.2022-03-25.rds.bz")
+# sce.sal.250K.med <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/downsampling_medianGenes_salmon.all.250000.2021-12-05.rds.bz")
+
+# 5. RESQC - READ DISTRIBUTION (getRESeQC_readDistribution)
+resqc <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/ReSQC.distribution.2021-12-05.rds.bz") %>% 
+  filter(ID %in% index)
+
+# 6. RESQC - GENE BODY COVERAGES (getRESeQC_coverage)
+cover <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/ReSQC.coverage.2021-12-05.rds.bz") %>% 
+  filter(ID %in% index)
+
+
+# 7. CHR-WIDE READ DISTRIBUTIONS
+# mito <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/mitochondrial.reads. 2022-01-10 .rds.bz")
+
+# 10. GC content
+GC.log <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/GC.logs.2022-01-10.rds.bz") %>% 
+  filter(ID %in% index)
+
+```
+
+```{r Suppl. LYSIS, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
+
+## FICOLL
+mydata <- med.exon %>%
+  filter(!PLATE %in% c("203-1", "203-2", "209")) %>%
+  mutate(NAME = case_when(
+    CELL == "PBMC" & DENATURATION == "72" &RT_LENGTH == "60" & TTH == "0" & T4 == "0" & LYSIS_VOLUME == "1" & OLIGOT_DILUTION_FACTOR == "5" & METHOD == "FASTSMART" & NACL == "0" & 
+    ENZYME %in% c("SIV", "MAXIMA") & PCR == "6" & LYSIS == "TRITON_LOW" & LIBRARYPREP == "NEXTERAXT" & RT_TEMP == "50" & DENATURATION_TIME == "3" & TSO == "1"~ "Triton 0.2%\nBetain 1M",
+    PLATE == "151" & LYSIS == "TRITON_FICOLL" ~ "Triton 0.2%\n5% Ficoll")) %>%
+  filter(!is.na(NAME), DEPTH == "100000")
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+summaryPlots(mydata = mydata, title = "FICOLL", mycols = c(
+  "Triton 0.2%\nBetain 1M" = "#E41A1C", 
+  "Triton 0.2%\n5% Ficoll" = "#FFFFCC"))
+
+## BSA
+mydata <- med.exon %>%
+  filter(PLATE %in% c("12", "17", "10")) %>%
+  mutate(NAME = case_when(
+    PLATE %in% c("10", "12") ~ "Triton 1.2%",
+    PLATE == "17" ~ "BSA 1mg/mL")) %>%
+  filter(!is.na(NAME), DEPTH == "100000")
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+summaryPlots(mydata = mydata, title = "BSA_HEK", mycols = c(
+  "Triton 1.2%" = "#FFFFCC", 
+  "BSA 1mg/mL" = "#A1DAB4"))
+
+mydata <- med.exon %>%
+  filter(PLATE %in% c("141-1")) %>%
+  mutate(NAME = case_when(
+    PLATE == "141-1" & LYSIS == "TRITON_LOW" ~ "Triton 0.2%",
+    PLATE == "141-1" & LYSIS == "TRITON_LOW_BSA" ~ "Triton 0.2%\nBSA",
+    PLATE == "141-1" & LYSIS == "BSA" ~ "BSA")) %>%
+  filter(!is.na(NAME), DEPTH == "100000")
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+summaryPlots(mydata = mydata, title = "BSA_PBMC", mycols = c(
+  "Triton 0.2%" = "#E41A1C",
+  "BSA" =  "#FFFFCC", 
+  "Triton 0.2%\nBSA" = "#A1DAB4"))
+
+## GUHCL
+mydata <- med.exon %>%
+  mutate(NAME = case_when(
+    PLATE == "177" ~ "50 mM GuHCl\n30 min RT",
+    CELL == "PBMC" & DENATURATION == "72" & RT_LENGTH == "30" & TTH == "0" & T4 == "0" & LYSIS_VOLUME == "1" & OLIGOT_DILUTION_FACTOR == "5" & METHOD == "FASTSMART" & NACL == "0" & 
+    ENZYME %in% c("SIV", "MAXIMA") & PCR == "6" & LYSIS == "TRITON_LOW" & RT_TEMP == "50" & TSO == "1"~ "0 mM GuHCl\n30 min RT")) %>%
+  filter(!is.na(NAME), DEPTH == "100000") %>%
+  filter(as.numeric(as.character(P_too_short_read)) < 20)
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+summaryPlots(mydata = mydata, title = "GUHCL", mycols = c(
+  "50 mM GuHCl\n30 min RT" =  "#FFFFCC", 
+  "0 mM GuHCl\n30 min RT" = "#A1DAB4"))
+
+mydata <- med.exon %>%
+  mutate(NAME = case_when(
+    PLATE == "271" & grepl(ID, pattern = "nonNUCLEI") ~ "50 mM GuHCl",
+    CELL == "HEK" & CYCLES == 19 & dTNP == 1 & DENATURATION == "72" & RT_LENGTH == "60" & TTH == "0" & T4 == "0" & LYSIS_VOLUME == "1" & METHOD == "FASTSMART" & NACL == "0" & ENZYME %in% c("SIV", "MAXIMA") & PCR == "6" & LYSIS == "TRITON_LOW" & RT_TEMP == "50" & DENATURATION_TIME == "3" & TSO == "1"~ "Triton 0.2%")) %>%
+  filter(!is.na(NAME), DEPTH == "250000") %>%
+  filter(as.numeric(as.character(P_too_short_read)) < 20)
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+summaryPlots(mydata = mydata, title = "GUHCL", mycols = c(
+  "50 mM GuHCl" =  "#FFFFCC", 
+  "Triton 0.2%" = "#E41A1C"))
+
+## TRITON 1.2%
+mydata <- med.exon %>%
+  filter(!PLATE %in% c("203", "209")) %>%
+  mutate(NAME = case_when(
+    CELL == "PBMC" & DENATURATION == "72" & RT_LENGTH == "60" & TTH == "0" & T4 == "0" & LYSIS_VOLUME == "1" & OLIGOT_DILUTION_FACTOR == "5" & METHOD == "FASTSMART" & NACL == "0" & ENZYME %in% c("SIV", "MAXIMA") & PCR == "6" & LYSIS == "TRITON_LOW" & LIBRARYPREP == "NEXTERAXT" & RT_TEMP == "50" & TSO == "1"~ "Triton 0.2%",
+    CELL == "PBMC" & DENATURATION == "72" & RT_LENGTH == "60" & TTH == "0" & T4 == "0" & LYSIS_VOLUME == "1" & OLIGOT_DILUTION_FACTOR == "5" & METHOD == "FASTSMART" & NACL == "0" & ENZYME %in% c("SIV", "MAXIMA") & PCR == "6" & LYSIS == "TRITON" & LIBRARYPREP == "NEXTERAXT" & RT_TEMP == "50" & TSO == "1"~ "Triton 1.2%")) %>%
+  filter(!is.na(NAME), DEPTH == "100000", as.numeric(P_too_short_read) < 25)
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+    
+summaryPlots(mydata = mydata, title = "TRITON", mycols = c(
+  "Triton 0.2%" = "#E41A1C",
+  "Triton 1.2%" = "#FFFFCC"))
+
+
+## Sulfobetaine
+mydata <- med.exon %>%
+  filter(!PLATE %in% c("203", "209")) %>%
+  mutate(NAME = case_when(
+    CELL == "HEK" & CYCLES == 19 & dTNP == 1 & DENATURATION == "72" & RT_LENGTH == "60" & TTH == "0" & T4 == "0" & LYSIS_VOLUME == "1" & METHOD == "FASTSMART" & NACL == "0" & ENZYME %in% c("SIV", "MAXIMA") & PCR == "6" & LYSIS == "TRITON_LOW" & RT_TEMP == "50" & DENATURATION_TIME == "3" & TSO == "1"~ "Triton 0.2%",
+    PLATE == 293 ~ "Sulfo-NP40-Triton",
+    PLATE == 295 ~ "Sulfo",
+    PLATE == 294 ~ "no denat\nSulfo-NP40-Triton")) %>%
+  filter(!is.na(NAME), !grepl("LV5|noBetaine", ID), DEPTH == "250000", as.numeric(P_too_short_read) < 25)
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+    
+
+summaryPlots(mydata = mydata, title = "TRITON", mycols = c(
+  "Triton 0.2%" = "#E41A1C", 
+  "Sulfo-NP40-Triton" = "#FFFFCC",
+  "Sulfo" = "#A1DAB4",
+  "no denat\nSulfo-NP40-Triton" = "#41B6C4"))
+
+```
+
+```{r Suppl. DENATURATION, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
+
+## DENATURATION TIME
+mydata <- med.exon %>%
+  filter(!PLATE %in% c("209", "203-1", "203-2")) %>%
+  mutate(NAME = case_when(
+    CELL == "PBMC" & DENATURATION == "72" &RT_LENGTH == "60" & TTH == "0" & T4 == "0" & LYSIS_VOLUME == "1" & OLIGOT_DILUTION_FACTOR == "5" & METHOD == "FASTSMART" & NACL == "0" & 
+    ENZYME %in% c("SIV", "MAXIMA") & PCR == "6" & LYSIS == "TRITON_LOW" & LIBRARYPREP == "NEXTERAXT" & RT_TEMP == "50" & DENATURATION_TIME == "3" & TSO == "1"  ~ "3 min",
+    PLATE == "151_2" & ENZYME == "SIV" & LYSIS == "TRITON_LOW" & TSO == 1 ~ "10 min")) %>%
+  filter(!is.na(NAME), DEPTH == 100000)
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+summaryPlots(mydata = mydata, title = "DENATURATION_TIME", mycols = c(
+  "3 min" = "#E41A1C", 
+  "10 min" = "#FFFFCC"))
+
+## DENATURATION TEMPERATURE
+
+# EXON
+mydata.ex <- med.exon %>%
+    filter(!PLATE %in% c("203-1", "203-2", "209")) %>%
+  mutate(NAME = case_when(
+  CELL == "PBMC" & DENATURATION == "72" & RT_LENGTH == "60" & TTH == "0" & T4 == "0" & LYSIS_VOLUME == "1" & OLIGOT_DILUTION_FACTOR == "5" & METHOD == "FASTSMART" & NACL == "0" & 
+    ENZYME %in% c("SIV", "MAXIMA") & PCR == "6" & LYSIS == "TRITON_LOW" & LIBRARYPREP == "NEXTERAXT" & RT_TEMP == "50" & DENATURATION_TIME == "3" & TSO == "1"~ "72°C",
+    PLATE == "126-1" ~ "95°C")) %>%
+  filter(!is.na(NAME), DEPTH == 100000)%>%
+  mutate(sce.ids = str_replace_all(paste0("X", ID, "_100000_1"), "-", "."))
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+p.exon <- summaryPlots(mydata = mydata.ex, title = "DENATURATION_TEMP_EXON", mycols = c(
+  "72°C" = "#E41A1C", 
+  "95°C" = "#FFFFCC"))
+
+# Intron vs Exon
+mydata.gene <- med.gene %>%
+    filter(!PLATE %in% c("203-1", "203-2", "209")) %>%
+  mutate(NAME = case_when(
+  CELL == "PBMC" & DENATURATION == "72" & RT_LENGTH == "60" & TTH == "0" & T4 == "0" & LYSIS_VOLUME == "1" & OLIGOT_DILUTION_FACTOR == "5" & METHOD == "FASTSMART" & NACL == "0" & 
+    ENZYME %in% c("SIV", "MAXIMA") & PCR == "6" & LYSIS == "TRITON_LOW" & LIBRARYPREP == "NEXTERAXT" & RT_TEMP == "50" & DENATURATION_TIME == "3" & TSO == "1"~ "72°C",
+    PLATE == "126-1" ~ "95°C")) %>%
+  filter(!is.na(NAME), DEPTH == 100000) %>%
+  mutate(sce.ids = str_replace_all(paste0("X", ID, "_250000_1"), "-", "."))
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+p.genes <- summaryPlots(mydata = mydata.gene, title = "DENATURATION_TEMP_GENE", mycols = c(
+  "72°C" = "#E41A1C", 
+  "95°C" = "#FFFFCC"))
+
+ggsave(p.genes[[1]], bg = "white", filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/DENATURATION_TEMP_GENE.tiff",dpi = 450, width = 6, height = 8)
+
+ggsave(plot_grid(plot_grid(p.exon[[1]] + ggtitle("Exons"), p.genes[[1]] + ggtitle("Exons + Introns")),p.exon[[2]]), bg = "white", filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/DENATURATION_TEMP_GENE.tiff", dpi = 450, width = 24, height = 6)
+
+ggsave(plot_grid(p.exon[[2]], p.exon[[3]], nrow = 2), filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/DENATURATION_TEMP_STATS.tiff",bg = "white", dpi = 450, width = 24, height = 12)
+
+  
+# Gene vs Exon = Coding only to avoid getting genes with almost not exons
+p.diff <- left_join(
+  right_join(filter(med.gene.coding, DEPTH == "250000") %>% select(ID, count_0),
+             select(mydata.ex, ID, NAME), by = "ID") %>%
+    dplyr::rename(gene = count_0),
+  right_join(filter(med.exon.coding, DEPTH == "250000") %>% select(ID, count_0),
+             select(mydata.ex, ID, NAME), by = "ID") %>%
+    dplyr::rename(exon = count_0),
+  by = c("ID", "NAME")) %>%
+  mutate(diff = gene - exon) %>%
+  ggplot(aes(y = diff, x = NAME, fill = reorder(NAME, diff, median))) +
+  geom_hline(yintercept = seq(0,2500,500), linetype = "dotted", color = "darkgrey") +
+  geom_boxplot() +
+  scale_fill_manual(values = c("72°C" = "#E41A1C", "95°C" = "#FFFFCC")) +
+  scale_y_continuous(breaks = seq(0,2500,500)) +
+  scale_color_brewer(palette = "Dark2") +
+  ylab("Difference Gene - Exon") + 
+  xlab("") +
+  theme_cowplot() +
+  theme(legend.position = "none",
+        axis.text.y = element_text(size = 18), 
+        axis.text.x = element_text(size = 12),
+        axis.title = element_text(size = 24),
+        legend.text = element_text(size = 14)) +
+  geom_text(aes(x = NAME, label=paste0("n = ", ..count..)), y = 0, stat='count', size=4)
+ggsave(p.diff, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/DENATURATION_TEMP_DIFF.tiff", height = 6, width = 4)
+
+# Intron vs Exon reads
+# row.names(sce.intron) == row.names(sce.exon)
+intron_exon_diff <- bind_cols(
+  gather(assay(sce.intron), ID, intron),
+  gather(assay(sce.exon), ID, exon) %>% select(-ID)) %>%
+  right_join(select(mydata.gene, sce.ids, NAME), by = c("ID" = "sce.ids")) %>%
+  filter(intron > 0 | exon > 0) %>%
+  group_by(NAME, ID) %>% 
+  summarise(
+    `intron: IN exon: IN` = sum(intron > 0 & exon > 0),
+    `intron: IN exon: OUT` = sum(intron > 0 & exon == 0),
+    `intron: OUT exon: IN` = sum(intron == 0 & exon > 0)) %>%
+  gather(key, val, -ID, -NAME)
+
+p.intron_exon <- ggplot(intron_exon_diff, aes(x = NAME, y = val, fill = NAME)) +
+  facet_wrap("key") +
+  geom_hline(yintercept = seq(0,3500,500), linetype = "dotted", color = "darkgrey") +
+  geom_boxplot() +
+  scale_fill_manual(values = c("72°C" = "#E41A1C", "95°C" = "#FFFFCC")) +
+  scale_y_continuous(breaks = seq(0,3500,500)) +
+  scale_color_brewer(palette = "Dark2") +
+  ylab("Detected Coding Genes") + 
+  xlab("") +
+  theme_cowplot() +
+  theme(legend.position = "none",
+        rect = element_rect(size = 0.75, color = "black"), 
+        panel.border = element_rect(size = 0.75, color = "black"), 
+        axis.text.x = element_text(size = 11),
+        panel.grid.major.x = element_line(linetype = "dotted", color = "darkgrey", size = 0.5),
+        axis.line.y.right = element_line(color = "black", linetype = "solid", size = 1)) 
+ggsave(p.intron_exon, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/DENATURATION_TEMP_INTRON_EXON_CODING.tiff", height = 6, width = 8)
+
+
+# Coverage
+mycover <- right_join(cover, mydata.ex %>% select(ID, NAME), by = "ID") %>%
+  gather(Percentile, reads, -ID, -NAME) %>%
+  filter(reads > 0) %>%
+  group_by(ID) %>%
+  mutate(percentage = 100*reads / sum(reads)) %>%
+  group_by(NAME, Percentile) %>%
+  summarise(mean.c = mean(percentage),
+            sd.c = sd(percentage)) %>%
+  ungroup() 
+  
+p.cover <- ggplot(mycover, aes(x = as.numeric(Percentile), color = as.factor(NAME), fill = as.factor(NAME))) +
+  geom_ribbon(aes(ymin = mean.c - sd.c, ymax = mean.c + sd.c), colour = NA) +
+  geom_line(aes(y=mean.c), size = 1.25) +
+  theme_cowplot() +
+  scale_color_manual(values = c("72°C" = "#E41A1C", "95°C" = "#A3A382")) +
+  scale_fill_manual(values = c("72°C" = alpha("#E41A1C", 0.15), "95°C" = alpha("#A3A382", 0.15))) +
+  xlab("Gene Body Percentile (5'->3')") +
+  ylab("Coverage (%)") +
+  theme(legend.title = element_blank(),
+        axis.text = element_text(size = 13),
+        axis.title = element_text(size = 15)) + 
+  theme(strip.background = element_blank(),
+        strip.text = element_text(face = "bold"))
+  
+ggsave(p.cover, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/DENATURE_TEMP_COVERAGE.tiff"), bg = "white", dpi = 450, height = 6, width = 8)
+  
+
+# Gene types
+geneDistribution <- geneContentSCE(sce = sce, ids = mydata.gene$ID, mygroups = mydata.gene$NAME, depth = 250000, tresh = 0, gtf = gtf.path)
+
+geneContent <- geneDistribution %>%
+  filter(gene_type %in% c("lncRNA", "snoRNA", "snRNA", "protein_coding", "processed_pseudogene", "TEC", "transcribed_processed_pseudogene", "transcribed_unitary_pseudogene", "transcribed_unprocessed_pseudogene", "unprocessed_pseudogene")) %>%
+  mutate(gene_type = factor(gene_type),
+         FILL2 = paste0("X", GROUP),
+         GROUP = factor(GROUP, levels = c("72°C", "95°C")),
+         gene_type = fct_reorder(gene_type, n, median, .desc = TRUE)) %>%
+  ggplot(aes(y = n, x = GROUP)) +
+  geom_violin(aes(fill = GROUP)) +
+  geom_boxplot(aes(fill = FILL2), width = 0.1) +
+  facet_wrap("gene_type", scales = "free", ncol = 5) +
+  theme_cowplot() +
+  ylab("Expressed Genes") +
+  theme(strip.background = element_blank(),
+        strip.text = element_text(face = "bold", size = 12),
+        legend.position = "none") +
+  scale_fill_manual(values = c("72°C" = "#E41A1C", "95°C" = "#FFFFCC", "X72°C" = colorspace::lighten("#E41A1C", 0.3), "X95°C" =  colorspace::lighten("#FFFFCC", 0.3)))
+
+ggsave(geneContent, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/PBMC_1ul_denaturation_geneType_2readsMin.tiff", dpi = 300, width = 20, height = 8)
+
+
+# 2. Assign Cells Types
+processCells <- function(sce = NULL, mydata = NULL){
+  library(scRNAseq)
+  library(scater)
+  library(scran)
+  library(Seurat)
+  
+  mysce <- SingleCellExperiment::SingleCellExperiment(list(counts = as.matrix(assay(sce)))) 
+  mysce <- mysce[,colnames(mysce) %in% mydata$sce.ids]
+  mysce$PLATE <- mydata$PLATE[match(colnames(mysce), mydata$sce.ids)]
+  mysce$GROUP <- mydata$NAME[match(colnames(mysce), mydata$sce.ids)]
+  
+  # Quality control.
+  is.mito <- grepl("^MT-", rownames(mysce))
+  mysce <- addPerCellQC(mysce, subsets=list(Mito=is.mito))
+  filtered <- quickPerCellQC(mysce, percent_subsets="subsets_Mito_percent")
+  mysce <- mysce[, !filtered$discard]
+  
+  # Normalization.
+  mysce <- logNormCounts(mysce)
+  
+  # Feature selection.
+  dec <- modelGeneVar(mysce)
+  
+  # Visualize the fit
+  fit.pbmc <- metadata(dec)
+  plot(fit.pbmc$mean, fit.pbmc$var, xlab="Mean of log-expression",
+      ylab="Variance of log-expression")
+  curve(fit.pbmc$trend(x), col="dodgerblue", add=TRUE, lwd=2)
+  
+  hvg <- getTopHVGs(dec, prop=0.1)
+  
+  # Dimensionality reduction.
+  set.seed(42)
+  mysce <- runPCA(mysce, ncomponents=10, subset_row=hvg)
+  mysce <- runUMAP(mysce, dimred = 'PCA', external_neighbors=TRUE)
+  
+  # Clustering.
+  g <- buildSNNGraph(mysce, k = 5, use.dimred = 'PCA')
+  mysce$CLUSTER <- factor(igraph::cluster_louvain(g)$membership)
+
+  return(as.Seurat(mysce))
+}
+
+s.intron <- processCells(sce = sce.intron, mydata = mydata.gene)
+s.exon <- processCells(sce = sce.exon, mydata = mydata.gene)
+
+# Markers
+Idents(s.intron) <- "CLUSTER"
+Idents(s.exon) <- "CLUSTER"
+
+# marks.ex <- FindAllMarkers(s.exon, test.use = "MAST", only.pos = TRUE, logfc.threshold = 1)
+# marks.intron <- FindAllMarkers(s.intron, test.use = "MAST", only.pos = TRUE, logfc.threshold = 1)
+
+s.intron <- Seurat::ScaleData(s.intron)
+s.exon <- Seurat::ScaleData(s.exon)
+
+markers <- c("CD4", "CD3E", "IL7R", "CCR7", "FOXP3", "SELL", "IL2RA", "CD8A", "GZMA", "PRF1", "CD79A", "CD74", "JCHAIN", "NKG7", "GNLY","CD14", "FCGR3A", "LYZ","HBA1", "HBA2", "HBB", "PPBP", "VWF","FCER1A", "CD1C")
+translatedGeneID <- sapply(markers, function(x) gtf$gene_id[grep(paste0("^", x, "$"), gtf$gene_name)] %>% unique)
+
+heat.ex <- DoHeatmap(s.exon, group.by = "CLUSTER", features = unlist(translatedGeneID)) +
+  scale_y_discrete(labels = c("ENSG00000010610.10"="CD4","ENSG00000198851.10"="CD3E","ENSG00000168685.15"="IL7R","ENSG00000126353.3"="CCR7","ENSG00000049768.16"="FOXP3","ENSG00000188404.10"="SELL","ENSG00000134460.18"="IL2RA","ENSG00000153563.15"="CD8A","ENSG00000145649.8"="GZMA","ENSG00000180644.8"="PRF1","ENSG00000105369.10"="CD79A","ENSG00000019582.15"="CD74","ENSG00000132465.11"="JCHAIN","ENSG00000105374.10"="NKG7","ENSG00000115523.17"="GNLY","ENSG00000170458.14"="CD14","ENSG00000203747.11"="FCGR3A","ENSG00000090382.7"="LYZ","ENSG00000206172.8"="HBA1","ENSG00000188536.13"="HBA2","ENSG00000244734.4"="HBB","ENSG00000163736.4"="PPBP","ENSG00000110799.13"="VWF","ENSG00000179639.10"="FCER1A","ENSG00000158481.13"="CD1C")) +
+  scale_fill_viridis_c(option = "inferno")
+
+heat.in <- DoHeatmap(s.intron, group.by = "CLUSTER", features = unlist(translatedGeneID)) +
+  scale_y_discrete(labels = c("ENSG00000010610.10"="CD4","ENSG00000198851.10"="CD3E","ENSG00000168685.15"="IL7R","ENSG00000126353.3"="CCR7","ENSG00000049768.16"="FOXP3","ENSG00000188404.10"="SELL","ENSG00000134460.18"="IL2RA","ENSG00000153563.15"="CD8A","ENSG00000145649.8"="GZMA","ENSG00000180644.8"="PRF1","ENSG00000105369.10"="CD79A","ENSG00000019582.15"="CD74","ENSG00000132465.11"="JCHAIN","ENSG00000105374.10"="NKG7","ENSG00000115523.17"="GNLY","ENSG00000170458.14"="CD14","ENSG00000203747.11"="FCGR3A","ENSG00000090382.7"="LYZ","ENSG00000206172.8"="HBA1","ENSG00000188536.13"="HBA2","ENSG00000244734.4"="HBB","ENSG00000163736.4"="PPBP","ENSG00000110799.13"="VWF","ENSG00000179639.10"="FCER1A","ENSG00000158481.13"="CD1C")) +
+  scale_fill_viridis_c(option = "inferno")
+
+s.exon$CELLTYPE <- case_when(s.exon$CLUSTER == 1 ~ "Näive T-Cells",
+          s.exon$CLUSTER == 2 ~ "B-Cells",
+          s.exon$CLUSTER == 3 ~ "NK-Cells",
+          s.exon$CLUSTER == 4 ~ "CD8+ T-Cells",
+          s.exon$CLUSTER == 5 ~ "CD4+ T-Cells",
+          s.exon$CLUSTER == 6 ~ "Monocytes")
+s.intron$CELLTYPE <- s.exon$CELLTYPE[match(colnames(s.intron), colnames(s.exon))]
+
+p.dims <- plot_grid(DimPlot(s.exon, label = T, pt.size = 1.5) + ggtitle("Exons - Clusters"), 
+                    DimPlot(s.exon, group.by = "GROUP", pt.size = 1.5) + ggtitle("Exons - RT Temperature") ,
+                    DimPlot(s.exon, group.by = "CELLTYPE", pt.size = 1.5, cols = RColorBrewer::brewer.pal(8, "Set2")) + ggtitle("Exons - Cell Types"),
+                    DimPlot(s.intron, label = T, pt.size = 1.5) + ggtitle("Introns - Clusters"), 
+                    DimPlot(s.intron, group.by = "GROUP", pt.size = 1.5) + ggtitle("Introns - RT Temperature"), 
+                    DimPlot(s.intron, group.by = "CELLTYPE", pt.size = 1.5, cols = RColorBrewer::brewer.pal(8, "Set2")) + ggtitle("Introns - Exon Cell Types"))
+
+ggsave(plot_grid(heat.ex, heat.in, labels = c("EXONS", "INTRONS")), filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/DENATURE_TEMP_HEATMAP.tiff"), dpi = 200, height = 8, width = 12)
+
+ggsave(p.dims, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/DENATURE_TEMP_DIMS.tiff"), dpi = 200, height = 12, width = 24)
+
+
+
+```
+
+
+```{r Suppl. RETROTRANSCRIPTION, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
+
+## NACL
+mydata <- med.exon %>%
+  filter(!PLATE %in% c("209", "203-1", "203-2")) %>%
+  mutate(NAME = case_when(
+    CELL == "PBMC" & DENATURATION == "72" &RT_LENGTH == "60" & TTH == "0" & T4 == "0" & LYSIS_VOLUME == "1" & OLIGOT_DILUTION_FACTOR == "5" & METHOD == "FASTSMART" & NACL == "0" & 
+    ENZYME %in% c("SIV", "Maxima") & PCR == "6" & LYSIS == "TRITON_LOW" & LIBRARYPREP == "NEXTERAXT" & RT_TEMP == "50" & DENATURATION_TIME == "3" & TSO == "1"  ~ "0 mM NaCl",
+    PLATE == "147" & NACL == 20 ~ "20 mM NaCl",
+    PLATE == "147" & NACL == 30 ~ "30 mM NaCl")) %>%
+  filter(!is.na(NAME), DEPTH == 100000)
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+summaryPlots(mydata = mydata, title = "NACL", mycols = c(
+  "0 mM NaCl" = "#E41A1C", 
+  "20 mM NaCl" = "#FFFFCC", 
+  "30 mM NaCl" = "#A1DAB4"))
+
+## GTP
+mydata <- med.exon %>%
+  mutate(NAME = case_when(
+    (PLATE == "247" & grepl("LV1", ID)) | (PLATE == "309" & dCTP == "3.3") ~ "dCTP (3.3 mM)",
+    PLATE == "310" ~ "GTP")) %>%
+  filter(!is.na(NAME), DEPTH == "250000")
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+summaryPlots(mydata = mydata, title = "GTP", mycols = c(
+  "dCTP (3.3 mM)" = "#E41A1C",
+  "GTP" =  "#FFFFCC"))
+
+## RT TEMPERATURE
+mydata <- med.exon %>%
+    filter(!PLATE %in% c("203-1", "203-2", "209")) %>%
+  mutate(NAME = case_when(
+    CELL == "PBMC" & DENATURATION == "72" & RT_LENGTH == "60" & TTH == "0" & T4 == "0" & LYSIS_VOLUME == "1" & OLIGOT_DILUTION_FACTOR == "5" & METHOD == "FASTSMART" & NACL == "0" & 
+    ENZYME %in% c("SIV", "MAXIMA") & PCR == "6" & LYSIS == "TRITON_LOW" & LIBRARYPREP == "NEXTERAXT" & RT_TEMP == "37" & DENATURATION_TIME == "3" & TSO == "1"~ "37°C RT",
+      CELL == "PBMC" & DENATURATION == "72" & RT_LENGTH == "60" & TTH == "0" & T4 == "0" & LYSIS_VOLUME == "1" & OLIGOT_DILUTION_FACTOR == "5" & METHOD == "FASTSMART" & NACL == "0" & 
+    ENZYME %in% c("SIV", "MAXIMA") & PCR == "6" & LYSIS == "TRITON_LOW" & LIBRARYPREP == "NEXTERAXT" & RT_TEMP == "50" & DENATURATION_TIME == "3" & TSO == "1"~ "50°C RT")) %>%
+  filter(!is.na(NAME), DEPTH == 100000)
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+summaryPlots(mydata = mydata, title = "RT_TEMPERATURE", mycols = c(
+  "50°C RT" = "#E41A1C", 
+  "37°C RT" = "#FFFFCC"))
+
+ggsave(p.ribo, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/RT_TEMPERATURE_RIBO.tiff", width = 4, height = 6)
+
+## RT ENZYME
+mydata <- med.exon %>%
+  filter(!PLATE %in% c("209", "203-1", "203-2")) %>%
+  mutate(NAME = case_when(
+    PLATE == "170" ~ "Maxima",
+    CELL == "PBMC" & DENATURATION == "72" & RT_LENGTH == "60" & TTH == "0" & T4 == "0" & LYSIS_VOLUME == "1" & OLIGOT_DILUTION_FACTOR == "5" & METHOD == "FASTSMART" & NACL == "0" & 
+    ENZYME == "SIV" & PCR == "6" & LYSIS == "TRITON_LOW" & LIBRARYPREP == "NEXTERAXT" & RT_TEMP == "50" & DENATURATION_TIME == "3" & TSO == "1"  ~ "Superscript IV")) %>%
+  filter(!is.na(NAME), DEPTH == "100000")
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+summaryPlots(mydata = mydata, title = "RT_ENZYME", mycols = c(
+  "Superscript IV" = "#E41A1C", 
+  "Maxima" = "#FFFFCC"))
+
+# OLIGO-DT
+mydata <- med.exon %>%
+  filter(PLATE %in% c("116", "117")) %>%
+  mutate(NAME = case_when(
+    PLATE == "117" & OLIGOT_DILUTION_FACTOR == 5 ~ "dTVN 1:5",
+    PLATE == "117" & OLIGOT_DILUTION_FACTOR == 10 ~ "dTVN 1:10")) %>%
+  filter(!is.na(NAME), DEPTH == 250000)
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+summaryPlots(mydata = mydata, title = "OLIGODT", mycols = c(
+  "dTVN 1:5" = "#E41A1C", 
+  "dTVN 1:10" = "#FFFFCC"))
+
+## TSO
+mydata <- med.exon %>%
+    filter(PLATE %in% c("196-1", "196-2")) %>%
+  mutate(NAME = case_when(
+  CELL == "PBMC" & DENATURATION == "72" & RT_LENGTH == "60" & TTH == "0" & T4 == "0" & LYSIS_VOLUME == "1" & OLIGOT_DILUTION_FACTOR == "5" & METHOD == "FASTSMART" & NACL == "0" & 
+    ENZYME %in% c("SIV", "MAXIMA") & PCR == "6" & LYSIS == "TRITON_LOW" & LIBRARYPREP == "NEXTERAXT" & RT_TEMP == "50" & DENATURATION_TIME == "3" & TSO == "1"~ "1x",
+  TSO == 1.5 ~ "1.5x",
+    TSO == 2 ~ "2x",
+    TSO == 3 ~ "3x",
+    TSO == 4 ~ "4x",
+    TSO == 5 ~ "5x")) %>%
+  # All TSO concentration done on the same plate
+  filter(PLATE %in% c("196-1", "196-2")) %>%
+  filter(!is.na(NAME), DEPTH == "250000")
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+mydata %>% group_by(NAME) %>% summarise( (median(count_0)) / 3186 )
+mydata %>% group_by(NAME) %>% summarise( (median(as.numeric(as.character(P_multiple_Loci)))) - 17.3)
+resqc %>% right_join(mydata %>% select(NAME, ID), by = "ID") %>% group_by(NAME) %>% summarise( (median(100*Intergenic/totalReadTags)) - 8.965)
+
+summaryPlots(mydata = mydata, title = "TSO", mycols = c(
+  "1x" = "#E41A1C", 
+  "1.5x" = "#FFFFCC",
+  "2x" = "#A1DAB4",
+  "3x" = "#41B6C4",
+  "4x" = "#2C7FB8",
+  "5x" = "#253494"))
+
+# Betaine
+mydata <- med.exon %>%
+  filter(PLATE %in% c("285", "284")) %>%
+  mutate(NAME = case_when(
+    PLATE == "284" ~ "Betaine",
+    PLATE == "285" ~ "no Betaine")) %>%
+  filter(!is.na(NAME), DEPTH == 100000)
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+summaryPlots(mydata = mydata, title = "BETAINE", mycols = c(
+  "Betaine" = "#E41A1C", 
+  "no Betaine" = "#FFFFCC"))
+
+# RT Duration
+mydata <- med.exon %>%
+  mutate(NAME = case_when(
+    PLATE == "281" ~ "30 Min. RT",
+    PLATE %in% c("278", "284", "247") & dTNP == 1 ~ "60 Min. RT")) %>%
+  filter(!is.na(NAME), !grepl("LV5|LV05", ID), DEPTH == 100000)
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+summaryPlots(mydata = mydata, title = "RT_Duration_HEK", mycols = c(
+  "30 Min. RT" = "#FFFFCC", 
+  "60 Min. RT" = "#E41A1C" ))
+
+
+mydata <- med.exon %>%
+  mutate(NAME = case_when(
+    PLATE == "115" ~ "30 Min. RT\nTriton 1.2%",
+    CELL == "PBMC" & DENATURATION == "72" & RT_LENGTH == "60" & TTH == "0" & T4 == "0" & LYSIS_VOLUME == "5" & METHOD == "FASTSMART" & NACL == "0" & ENZYME %in% c("SIV", "MAXIMA") & PCR == "6" & LYSIS == "TRITON_LOW" & RT_TEMP == "50" & DENATURATION_TIME == "3" & TSO == "1"~ "60 Min. RT\nTriton 1.2%")) %>%
+  filter(!is.na(NAME), DEPTH == 100000) %>%
+  filter(count_0 < 5000)
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+summaryPlots(mydata = mydata, title = "RT_Duration_PBMC_Triton12_LV5", mycols = c(
+  "60 Min. RT\nTriton 1.2%" = "#E41A1C", 
+  "30 Min. RT\nTriton 1.2%" = "#FFFFCC"))
+
+
+mydata <- med.exon %>%
+    filter(!PLATE %in% c("203-1", "203-2", "209")) %>%
+  mutate(NAME = case_when(
+    PLATE == "169" ~ "30 Min. RT",
+    CELL == "PBMC" & DENATURATION == "72" & RT_LENGTH == "60" & TTH == "0" & T4 == "0" & LYSIS_VOLUME == "1" & METHOD == "FASTSMART" & NACL == "0" & ENZYME %in% c("SIV", "MAXIMA") & PCR == "6" & LYSIS == "TRITON_LOW" & RT_TEMP == "50" & DENATURATION_TIME == "3" & TSO == "1"~ "60 Min. RT")) %>%
+  filter(!is.na(NAME), DEPTH == 100000) %>%
+  filter(count_0 < 5000, P_uniquely_mapped_reads > 70)
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+summaryPlots(mydata = mydata, title = "RT_Duration_PBMC_LV1", mycols = c(
+  "60 Min. RT" = "#E41A1C", 
+  "30 Min. RT" = "#FFFFCC"))
+
+# WATCHMAKER
+mydata <- med.exon %>%
+  filter(!PLATE %in% c("203", "209")) %>%
+  mutate(NAME = case_when(
+    CELL == "HEK" & CYCLES == 19 & dTNP == 1 & DENATURATION == "72" & RT_LENGTH == "60" & TTH == "0" & T4 == "0" & LYSIS_VOLUME == "1" & METHOD == "FASTSMART" & NACL == "0" & ENZYME %in% c("SIV", "MAXIMA") & PCR == "6" & LYSIS == "TRITON_LOW" & RT_TEMP == "50" & DENATURATION_TIME == "3" & TSO == "1"~ "SIV",
+    PLATE == 312 & ENZYME != "SIV" ~ "Watchmaker")) %>%
+  filter(!is.na(NAME), !grepl("LV5|noBetaine", ID), DEPTH == "250000", as.numeric(P_too_short_read) < 25)
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+summaryPlots(mydata = mydata, title = "RT_Watchmaker", mycols = c(
+  "SIV" = "#E41A1C", 
+  "Watchmaker" = "#FFFFCC"))
+
+```
+
+# CONDITION: Oligo-dTNV 
+
+```{r HEK yield 5uL, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
+
+# 1. Load the cDNA yield information 
+yield <- read_tsv("/home/vincent.hahaut/data_storage/transfer/Mendeley/cDNA Yields/FS_PBMC_cDNAYield_oligodT.txt") %>%
+  mutate(
+    fill = case_when(
+      `Oligo-dTVN Dilution Factor` == "5" ~ "FS\ndT 1:5",
+      `Oligo-dTVN Dilution Factor` == "10" ~ "FS\ndT 1:10"),
+    LYSIS_VOLUME = ifelse(`Plate ID` == 117, "Reaction Volume: 25 µL", "Reaction Volume: 5 µL"))
+# MEAN YIELDS: yield %>% group_by(fill) %>% summarise(mean(`cDNA Yield`, na.rm = T))
+t.test(data = yield %>% filter(`Plate ID` == 121), `cDNA Yield` ~ `Oligo-dTVN Dilution Factor`, alternative = "two.sided")
+t.test(data = yield %>% filter(`Plate ID` == 117), `cDNA Yield` ~ `Oligo-dTVN Dilution Factor`, alternative = "two.sided")
+
+geomseg <- data_frame(LYSIS_VOLUME = c("Reaction Volume: 5 µL", "Reaction Volume: 25 µL"),
+                      x = c(1,1),
+                      xend = c(2,2),
+                      y = c(3.5, 3.5),
+                      yend = c(3.5, 3.5),
+                      lab = c("ns", "ns"))
+
+pA <- ggplot() +
+  geom_hline(yintercept = seq(0,3.5,0.5), linetype = "dotted", color = "darkgrey") + 
+  geom_violin(data = yield, aes(x = fill, y = `cDNA Yield`, fill = fill)) +
+  geom_boxplot(data = yield, aes(x = fill, y = `cDNA Yield`, fill = fill), width = 0.1) +
+  theme_cowplot(font_size = 24) +
+  theme(legend.position = "none") +
+  xlab("") +
+  ylab("cDNA Yield (ng/µL)") +
+  scale_fill_manual(values = c("FS\ndT 1:5" = colorspace::lighten("#E41A1C", 0.3), "FS\ndT 1:10" = colorspace::darken("#E41A1C", 0.3))) +
+  geom_text(data = yield, aes(x = fill, label=paste0("n = ", ..count..)), y = -0.1, stat='count', size=4) +
+  ylim(c(-0.12,3.7)) +
+  geom_segment(data = geomseg, aes(x = x, xend = xend, y = y, yend = yend)) +
+  geom_text(data = geomseg, aes(x = 1.5, y = yend+0.1, label=lab, size=12)) +
+  facet_wrap("LYSIS_VOLUME") +
+  theme(legend.position = "none", 
+        legend.title = element_blank(),
+        axis.text = element_text(size = 18), 
+        axis.title = element_text(size = 24),
+        legend.text = element_text(size = 14),
+        rect = element_rect(size = 0.75, color = "black"), 
+        panel.border = element_rect(size = 0.75, color = "black"), 
+        axis.line.y.right = element_line(color = "black", linetype = "solid", size = 1)) 
+
+ggsave(pA, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/PBMC_oligodT_Yield.tiff", bg = "white", dpi = 450, height = 8, width = 10)
+
+
+# GENE DETECTION
+mydata <- med.exon %>%
+  filter(PLATE %in% c("117", "121")) %>%
+  mutate(NAME = case_when(
+    OLIGOT_DILUTION_FACTOR == 5 ~ "FS\ndT 1:5",
+    OLIGOT_DILUTION_FACTOR == 10 ~ "FS\ndT 1:10"))  %>%
+  filter(!is.na(NAME), DEPTH == 500000, count_0 < 7000) %>%
+  mutate(LYSIS_VOLUME = ifelse(LYSIS_VOLUME == 5, "Reaction Volume: 25 µL", "Reaction Volume: 5 µL"))
+# kinda non normal distribution but large enough sample (shapiro.test(x = mydata$count_0))
+# t.test(data = mydata, count_0 ~ NAME)
+# wilcox.test(data = mydata, count_0 ~ NAME, alternative = "two.sided")
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+mydata %>%
+  group_by(LYSIS_VOLUME) %>%
+  rstatix::wilcox_test(count_0 ~ NAME)
+geomseg <- data_frame(LYSIS_VOLUME = c("Reaction Volume: 5 µL", "Reaction Volume: 25 µL"),
+                      x = c(1,1),
+                      xend = c(2,2),
+                      y = c(7000, 7000),
+                      yend = c(7000, 7000),
+                      lab = c("p=0.0479", "ns"))
+
+p1 <- ggplot() +
+  geom_hline(yintercept = seq(0,max(mydata$TPM_0)+500,1000), linetype = "dotted", color = "darkgrey") +
+  geom_violin(data = mydata, aes(y = count_0, x = NAME, fill = NAME)) +
+  geom_boxplot(data = mydata, aes(y = count_0, x = NAME, fill = NAME), width = 0.1) +
+  scale_fill_manual(values = c("FS\ndT 1:5" = colorspace::lighten("#E41A1C", 0.3), "FS\ndT 1:10" = colorspace::darken("#E41A1C", 0.3))) +
+  scale_y_continuous(breaks = seq(0,max(mydata$count_0)+500,1000), labels = c("0", "1,000", "2,000", "3,000", "4,000", "5,000", "6,000", "7,000"), limits = c(-125, 7250)) +
+  ylab("Genes Detected") + 
+  xlab("") +
+  theme_cowplot(font_size = 24) +
+  geom_text(data = mydata, aes(x = NAME, label=paste0("n = ", ..count..)), y = -100, stat='count', size=4) +
+  geom_segment(data = geomseg, aes(x = x, xend = xend, y = y, yend = yend)) +
+  geom_text(data = geomseg, aes(x = 1.5, y = yend+150, label=lab, size=12)) +
+  facet_wrap("LYSIS_VOLUME") +
+  theme(legend.position = "none", 
+        legend.title = element_blank(),
+        axis.text = element_text(size = 18), 
+        axis.title = element_text(size = 24),
+        legend.text = element_text(size = 14),
+        rect = element_rect(size = 0.75, color = "black"), 
+        panel.border = element_rect(size = 0.75, color = "black"), 
+        axis.line.y.right = element_line(color = "black", linetype = "solid", size = 1)) 
+
+ggsave(p1, 
+       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/PBMC_PLATE117_oligodT_geneDetection.tiff", bg ="white", dpi = 450, width = 12, height = 8)
+
+ggsave(plot_grid(pA, p1), 
+       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/PBMC_OLIGOT_ALL.tiff", dpi = 450, width = 20, height = 8, bg = "white")
+
+```
+
+
+```{r Suppl. PCR, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
+
+## TTH
+mydata <- med.exon %>%
+  filter(!PLATE %in% c("209", "203-1", "203-2")) %>%
+  mutate(NAME = case_when(
+    CELL == "PBMC" & DENATURATION == "72" & RT_LENGTH == "60" & TTH == "0" & T4 == "0" & LYSIS_VOLUME == "1" & OLIGOT_DILUTION_FACTOR == "5" & METHOD == "FASTSMART" & NACL == "0" & ENZYME %in% c("SIV", "Maxima") & PCR == "6" & LYSIS == "TRITON_LOW" & LIBRARYPREP == "NEXTERAXT" & RT_TEMP == "50" & DENATURATION_TIME == "3" & TSO == "1"  ~ "0 ng\nET SSB",
+    PLATE == c("146") & TTH == 40 ~ "40 ng\nET SSB",
+    PLATE == c("146") & TTH == 80 ~ "80 ng\nET SSB",
+    PLATE == c("146") & TTH == 160 ~ "160 ng\nET SSB",
+    PLATE == c("146") & TTH == 250 ~ "250 ng\nET SSB")) %>%
+  filter(!is.na(NAME), DEPTH == 100000) %>%
+  mutate(NAME = factor(as.factor(NAME), levels = c("0 ng\nET SSB", "40 ng\nET SSB", "80 ng\nET SSB", "160 ng\nET SSB", "250 ng\nET SSB")))
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+summaryPlots(mydata = mydata, title = "TTH", mycols = c(
+  "0 ng\nET SSB" = "#E41A1C", 
+  "40 ng\nET SSB" = "#FFFFCC", 
+  "80 ng\nET SSB" = "#A1DAB4", 
+  "160 ng\nET SSB" = "#41B6C4", 
+  "250 ng\nET SSB" = "#225EA8"))
+
+## PFU
+mydata <- med.exon %>%
+  filter(!PLATE %in% c("203-1", "203-2", "209")) %>%
+  mutate(NAME = case_when(
+    CELL == "PBMC" & DENATURATION == "72" &RT_LENGTH == "60" & TTH == "0" & T4 == "0" & LYSIS_VOLUME == "1" & OLIGOT_DILUTION_FACTOR == "5" & METHOD == "FASTSMART" & NACL == "0" &
+    ENZYME %in% c("SIV", "MAXIMA") & PCR == "6" & LYSIS == "TRITON_LOW" & LIBRARYPREP == "NEXTERAXT" & RT_TEMP == "50" & DENATURATION_TIME == "3" & TSO == "1"~ "KAPA",
+    PLATE == "151" & ENZYME == "SIV_PFU" ~ "KAPA - PFU")) %>%
+  filter(!is.na(NAME), DEPTH == 100000)
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+summaryPlots(mydata = mydata, title = "PFU", mycols = c(
+  "KAPA" = "#E41A1C", 
+  "KAPA - PFU" = "#FFFFCC"))
+
+## PCR DURATION
+mydata <- med.exon %>%
+  filter(PLATE %in% c("196-1","196-2","200"), as.numeric(P_too_short_read) < 25) %>%
+  mutate(NAME = case_when(
+    PLATE == "200" & !grepl("Tecan", ID) ~ "4 min PCR",
+    CELL == "PBMC" & DENATURATION == "72" & RT_LENGTH == "60" & TTH == "0" & T4 == "0" & LYSIS_VOLUME == "1" & OLIGOT_DILUTION_FACTOR == "5" & METHOD == "FASTSMART" & NACL == "0" & 
+    ENZYME %in% c("SIV", "MAXIMA") & PCR == "6" & LYSIS == "TRITON_LOW" & LIBRARYPREP == "NEXTERAXT" & RT_TEMP == "50" & DENATURATION_TIME == "3" & TSO == "1" & PLATE != "209"  ~ "6 min PCR")) %>%
+  filter(!is.na(NAME), DEPTH == 100000)
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+summaryPlots(mydata = mydata, title = "PCR_ELONGATION", mycols = c(
+  "6 min PCR" = "#E41A1C", 
+  "4 min PCR" = "#FFFFCC"))
+
+## dNTPs
+mydata <- med.exon %>%
+  mutate(NAME = case_when(
+    PLATE == "278" & dTNP == 1 ~ "Full dNTPs",
+    #PLATE == "278" & dTNP == 0.5 ~ "half dNTPs",
+    PLATE == "278" & dTNP == 0 ~ "no dNTPs")) %>%
+  filter(!is.na(NAME), as.numeric(DEPTH) == 50000) %>%
+  #mutate(NAME = factor(as.factor(NAME), levels = c("Full dNTPs","half dNTPs","no dNTPs"))) %>%
+  mutate(NAME = factor(as.factor(NAME), levels = c("Full dNTPs","no dNTPs"))) %>%
+  # too little cells for now:
+  filter(NAME != "half dNTPs")
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+summaryPlots(mydata = mydata, title = "dNTP", mycols = c(
+  "Full dNTPs" = "#E41A1C", 
+  "half dNTPs" = "#FFFFCC", 
+  "no dNTPs" = "#A1DAB4"))
+
+```
+
+
+```{r Suppl. T4, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
+
+# YIELD
+# 1. Load the cDNA yield information from paltes 2,3,5,6,10,12
+# Modify the names for plotting reasons
+yield <- read_tsv("/home/vincent.hahaut/data_storage/transfer/Mendeley/cDNA Yields/FS_HEK_cDNAYield_19022021.txt") %>% 
+  filter(Method %in% c("FS", "FS - 0.5 ng T4g32p")) %>%
+  mutate(
+    fill = case_when(
+      Method == "FS" & `Plate ID` == 12 ~ "FS-19c\nRT:50°C",
+      Method == "FS" & `Plate ID` == 10 ~ "FS-20c\nRT:50°C",
+      Method == "FS - 0.5 ng T4g32p" ~ "FS - 5 µg T4g32p\nRT:37°C"),
+    fill = factor(as.factor(fill), levels = c("FS - 5 µg T4g32p\nRT:37°C", "FS-20c\nRT:50°C", "FS-19c\nRT:50°C")),
+    Method = case_when(
+      Method == "FS" ~ "FS\n20c - 19c\nRT:50°C",
+      Method == "FS - 0.5 ng T4g32p" ~ "FS - 5 µg T4g32p\n19c\nRT:37°C"))
+# MEAN YIELDS: yield %>% group_by(fill) %>% summarise(mean(`cDNA Yield`, na.rm = T))
+
+pA <- ggplot() +
+  geom_hline(yintercept = seq(0,25,5), linetype = "dotted", color = "darkgrey") + 
+  geom_boxplot(data = yield, aes(x = Method, y = `cDNA Yield`, fill = yield$fill)) +
+  theme_cowplot(font_size = 24) +
+  theme(legend.position = "none") +
+  xlab("") +
+  ylab("cDNA Yield (ng/µL)") +
+  scale_fill_manual(values = c("FS - 5 µg T4g32p\nRT:37°C" =  colorspace::lighten("#FFFFCC", 0.4), "FS-19c\nRT:50°C" = colorspace::darken("#FFFFCC", 0.15), "FS-20c\nRT:50°C" = colorspace::darken("#E41A1C", 0.05))) +
+  geom_text(aes(x = 0.75, label="n = 45"),  y = -0.5, stat='count', size=5) +
+  geom_text(aes(x = 1.25, label="n = 46"),  y = -0.5, stat='count', size=5) +
+  geom_text(aes(x = 2, label="n = 46"),  y = -0.5, stat='count', size=5) +
+  ggtitle("HEK 293T")
+
+ggsave(pA, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_cDNA_yield_T4.tiff", bg = "white", dpi = 450, height = 8, width = 6)
+
+###
+yield <- read_tsv("/home/vincent.hahaut/data_storage/transfer/Mendeley/cDNA Yields/FS_PBMC_cDNAYield_T4.txt") %>%
+  mutate(Method = case_when(
+      Method == "FS" ~ "FS\nRT:50°C",
+      Method == "FS - 0.5 ng T4g32p" ~ "FS - 5 µg T4g32p\nRT:37°C")) %>%
+  filter(Method %in% c("FS\nRT:50°C", "FS - 5 µg T4g32p\nRT:37°C"))
+# MEAN YIELDS: yield %>% group_by(fill) %>% summarise(mean(`cDNA Yield`, na.rm = T))
+
+pA <- ggplot() +
+  geom_hline(yintercept = seq(0,4,0.5), linetype = "dotted", color = "darkgrey") + 
+  geom_boxplot(data = yield, aes(x = Method, y = `cDNA Yield`, fill = Method)) +
+  theme_cowplot(font_size = 24) +
+  theme(legend.position = "none") +
+  xlab("") +
+  ylab("cDNA Yield (ng/µL)") +
+  scale_fill_manual(values = c("FS - 5 µg T4g32p\nRT:37°C" =  "#FFFFCC", "FS\nRT:50°C" = "#E41A1C")) +
+  geom_text(aes(x = "FS\nRT:50°C", label="n = 88"),  y = -0.05, size=5) +
+  geom_text(aes(x = "FS - 5 µg T4g32p\nRT:37°C", label="n = 92"),  y = -0.05, size=5)  +
+  ggtitle("hPBMC")
+
+ggsave(pA, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/PBMC_cDNA_yield_T4.tiff", bg= "white", dpi = 450, height = 8, width = 6)
+
+
+# HEK + T4
+mydata <- med.exon %>%
+  filter(PLATE %in% c("10", "12", "11")) %>%
+  mutate(NAME = case_when(
+    PLATE %in% c("10", "12") ~ "T4g32p 0 µg\nRT:50°C",
+    PLATE %in% c("11") ~ "T4g32p 5 µg\nRT:37°C")) %>%
+  filter(!is.na(NAME), DEPTH == 100000)
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+p.hek <- summaryPlots(mydata = mydata, title = "HEK_T4g32p", mycols = c(
+  "T4g32p 0 µg\nRT:50°C" = "#E41A1C", 
+  "T4g32p 5 µg\nRT:37°C" = "#FFFFCC"))
+
+# PBMC + T4
+mydata <- med.exon %>%
+  filter(!PLATE %in% c("200", "207", "203-1", "203-2", "209")) %>%
+  mutate(NAME = case_when(
+    CELL == "PBMC" & DENATURATION == "72" & RT_LENGTH == "60" & TTH == "0" & T4 == "0" & LYSIS_VOLUME == "5" & OLIGOT_DILUTION_FACTOR == "5" & METHOD == "FASTSMART" & NACL == "0" & 
+    ENZYME %in% c("SIV", "MAXIMA") & PCR == "6" & LYSIS == "TRITON_LOW" & RT_TEMP == "50" & DENATURATION_TIME == "3" & TSO == "1" ~ "T4g32p 0 µg\nRT:50°C",
+    CELL == "PBMC" & DENATURATION == "72" & RT_LENGTH == "60" & TTH == "0" & T4 == "0.5" & LYSIS_VOLUME == "5" & OLIGOT_DILUTION_FACTOR == "5" & METHOD == "FASTSMART" & NACL == "0" & 
+    ENZYME %in% c("SIV", "MAXIMA") & PCR == "6" & LYSIS == "TRITON_LOW" & RT_TEMP == "37" & DENATURATION_TIME == "3" & TSO == "1" ~ "T4g32p 5 µg\nRT:37°C",
+    )) %>%
+  filter(!is.na(NAME), DEPTH == 250000, count_0 < 6500)
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+p.pbmc <- summaryPlots(mydata = mydata, title = "PBMC_T4g32p", mycols = c(
+  "T4g32p 0 µg\nRT:50°C" = "#E41A1C", 
+  "T4g32p 5 µg\nRT:37°C" = "#FFFFCC"))
+
+ggsave(plot_grid(p.hek[[1]] + ggtitle("HEK 293T"), p.pbmc[[1]] + ggtitle("hPBMCs")), 
+        filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/T4_geneExpression.tiff"),
+        dpi = 450, width = 12, height = 8, bg = "white")
+
+ggsave(plot_grid(p.hek[[2]] + ggtitle("HEK 293T"), p.pbmc[[2]] + ggtitle("hPBMCs"), nrow = 2), 
+        filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/T4_stats.tiff"),
+        dpi = 450, width = 12, height = 12, bg = "white")
+
+# RT Temperature
+# # TOO FEW CELLS
+# mydata <- med.exon %>%
+#   filter(PLATE %in% c("210")) %>%
+#   mutate(NAME = case_when(
+#     RT_TEMP == "37" ~ "37C",
+#     RT_TEMP == "37.6" ~ "37.6C",
+#     RT_TEMP == "39.2" ~ "39.2C",
+#     RT_TEMP == "41.7" ~ "41.7C",
+#     RT_TEMP == "45.1" ~ "45.1C",
+#     RT_TEMP == "47.6" ~ "47.6C",
+#     RT_TEMP == "49.5" ~ "49.5C",
+#     RT_TEMP == "50" ~ "50C")) %>%
+#   filter(!is.na(NAME), DEPTH == 250000)
+
+# summaryPlots(mydata = mydata, title = "PBMC_T4g32p_TEMP", mycols = c(
+#   "50C" = "#E41A1C", 
+#   "37C" = "#FFFFD9", 
+#   "37.6C" = "#EDF8B1", 
+#   "39.2C" = "#C7E9B4", 
+#   "41.7C" = "#7FCDBB", 
+#   "45.1C" = "#41B6C4", 
+#   "47.6C" = "#1D91C0",
+#   "49.5C" = "#225EA8"))
+
+# OLIGO-dTNV - T4 - 1uL
+mydata <- med.exon %>%
+  filter(PLATE %in% c("122", "123", "121")) %>%
+  mutate(NAME = case_when(
+    PLATE %in% c("121") & OLIGOT_DILUTION_FACTOR == 5 & T4 == 0 ~ "dTVN 1:5\nT4 0",
+    PLATE %in% c("121") & OLIGOT_DILUTION_FACTOR == 10 & T4 == 0 ~ "dTVN 1:10\nT4 0",
+    PLATE %in% c("123") & OLIGOT_DILUTION_FACTOR == 5 & T4 == 0.125 ~ "dTVN 1:5\nT4 0.25µg",
+    PLATE %in% c("123") & OLIGOT_DILUTION_FACTOR == 10 & T4 == 0.125 ~ "dTVN 1:10\nT4 0.25µg")) %>%
+  filter(!is.na(NAME), DEPTH == 100000)
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+summaryPlots(mydata = mydata, title = "T4_OLIGOT", mycols = c(
+  "dTVN 1:5\nT4 0" = "#E41A1C", 
+  "dTVN 1:10\nT4 0" = "#FFFFCC",
+  "dTVN 1:5\nT4 0.25µg" = "#EDF8B1",
+  "dTVN 1:10\nT4 0.25µg" = "#C7E9B4"))
+
+# OLIGO-dTNV - Titration T4 - 1uL
+mydata <- med.exon %>%
+  filter(PLATE %in% c("122", "123", "121")) %>%
+  mutate(NAME = case_when(
+    PLATE %in% c("121") & OLIGOT_DILUTION_FACTOR == 5 & T4 == 0 ~ "0µg",
+    PLATE %in% c("123") & OLIGOT_DILUTION_FACTOR == 5 & T4 == 0.0625 ~ "0.0125µg",
+    PLATE %in% c("123") & OLIGOT_DILUTION_FACTOR == 5 & T4 == 0.125 ~ "0.25µg",
+    PLATE %in% c("123") & OLIGOT_DILUTION_FACTOR == 5 & T4 == 0.375 ~ "0.75µg",
+    PLATE %in% c("122") & OLIGOT_DILUTION_FACTOR == 5 & T4 == 0.25 ~ "0.5µg",
+    PLATE %in% c("122") & OLIGOT_DILUTION_FACTOR == 5 & T4 == 0.50 ~ "1µg")) %>%
+  filter(!is.na(NAME), DEPTH == 100000) %>%
+  mutate(NAME = factor(NAME, levels = c("0µg", "0.0125µg", "0.25µg", "0.5µg", "0.75µg", "1µg")))
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+summaryPlots(mydata = mydata, title = "T4_TITRATION_PBMC", mycols = c(
+   "0µg" = "#E41A1C", 
+   "0.0125µg" = "#FFFFD9", 
+   "0.25µg" = "#EDF8B1", 
+   "0.75µg" = "#C7E9B4", 
+   "0.5µg" = "#7FCDBB", 
+   "1µg" = "#41B6C4"))
+
+# OLIGO-dTNV - T4 + RT Enzymes - 1uL
+mydata <- med.exon %>%
+  filter(!PLATE %in% c("209", "203-1", "203-2")) %>%
+  mutate(NAME = case_when(
+    PLATE == "122" & OLIGOT_DILUTION_FACTOR == 5 & T4 == 0.25 ~ "SSIV\n0.5µg",
+    PLATE == "123" & OLIGOT_DILUTION_FACTOR == 5 & T4 == 0.125 ~ "SSIV\n0.25µg",
+    PLATE == "123" & OLIGOT_DILUTION_FACTOR == 5 & T4 == 0.375 ~ "SSIV\n0.75µg",
+    PLATE == "124-2" & T4 == 0.250 ~ "Max.\n0.5µg",
+    PLATE == "124-2" & T4 == 0.125 ~ "Max.\n0.25µg",
+    PLATE == "124-2" & T4 == 0.375 ~ "Max.\n0.75µg")) %>%
+  filter(!is.na(NAME), DEPTH == 100000) %>%
+  mutate(NAME = factor(NAME, levels = c("Max.\n0.25µg", "Max.\n0.5µg", "Max.\n0.75µg", "SSIV\n0.25µg", "SSIV\n0.5µg", "SSIV\n0.75µg")))
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+summaryPlots(mydata = mydata, title = "T4_TITRATION_PBMC_RTenzyme", mycols = c(
+   "SSIV\n0.5µg" = "#FFFFD9", 
+   "SSIV\n0.25µg" = "#EDF8B1", 
+   "SSIV\n0.75µg" = "#C7E9B4", 
+   "Max.\n0.5µg" = "#7FCDBB", 
+   "Max.\n0.25µg" = "#41B6C4",
+   "Max.\n0.75µg" = "#1D91C0"))
+
+# RT DURATION + T4
+mydata <- med.exon %>%
+  filter(!PLATE %in% c("200", "207", "203-1", "203-2", "209")) %>%
+  mutate(NAME = case_when(
+    CELL == "PBMC" & DENATURATION == "72" & RT_LENGTH == "60" & TTH == "0" & T4 == "0.125" & LYSIS_VOLUME == "1" & OLIGOT_DILUTION_FACTOR == "5" & METHOD == "FASTSMART" & NACL == "0" & 
+    ENZYME %in% c("SIV") & PCR == "6" & LYSIS == "TRITON" & RT_TEMP == "37" & DENATURATION_TIME %in% c("3", "10") & TSO == "1" ~ "60min\n0.25µg\nNext.",
+    CELL == "PBMC" & DENATURATION == "72" & RT_LENGTH == "60" & TTH == "0" & T4 == "0.375" & LYSIS_VOLUME == "1" & OLIGOT_DILUTION_FACTOR == "5" & METHOD == "FASTSMART" & NACL == "0" & 
+    ENZYME %in% c("SIV") & PCR == "6" & LYSIS == "TRITON" & RT_TEMP == "37" & DENATURATION_TIME %in% c("3", "10") & TSO == "1" ~ "60min\n0.75µg\nNext.",
+    CELL == "PBMC" & DENATURATION == "72" & RT_LENGTH == "60" & TTH == "0" & T4 == "0.25" & LYSIS_VOLUME == "1" & OLIGOT_DILUTION_FACTOR == "5" & METHOD == "FASTSMART" & NACL == "0" & 
+    ENZYME %in% c("SIV") & PCR == "6" & LYSIS == "TRITON" & RT_TEMP == "37" & DENATURATION_TIME %in% c("3", "10") & TSO == "1" ~ "60min\n0.5µg\nNext.",
+    PLATE == "152" & OLIGOT_DILUTION_FACTOR == 5 & T4 == 0.25 ~ "30min\n0.5µg\nPlex.",
+    PLATE == "152" & OLIGOT_DILUTION_FACTOR == 5 & T4 == 0.125 ~ "30min\n0.25µg\nPlex.",
+    PLATE == "152" & OLIGOT_DILUTION_FACTOR == 5 & T4 == 0.375 ~ "30min\n0.75µg\nPlex.",
+    PLATE == "168" & OLIGOT_DILUTION_FACTOR == 5 & T4 == 0.5 ~ "30min\n1µg\nPlex.")) %>%
+  filter(!is.na(NAME), DEPTH == 100000) %>%
+    mutate(NAME = factor(NAME, levels = c("60min\n0.25µg\nNext.", "60min\n0.5µg\nNext.", "60min\n0.75µg\nNext.", "30min\n0.25µg\nPlex.", "30min\n0.5µg\nPlex.", "30min\n0.75µg\nPlex.", "30min\n1µg\nPlex.")))
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+
+summaryPlots(mydata = mydata, title = "T4_RT_DURATION", mycols = c(
+   "60min\n0.25µg\nNext." = "#FFFFD9", 
+   "60min\n0.5µg\nNext." = "#EDF8B1", 
+   "60min\n0.75µg\nNext." = "#C7E9B4", 
+   "30min\n0.25µg\nPlex." = "#7FCDBB", 
+   "30min\n0.5µg\nPlex." = "#41B6C4",
+   "30min\n0.75µg\nPlex." = "#1D91C0",
+   "30min\n1µg\nPlex." = "#225EA8"))
+
+# LYSIS + T4
+mydata <- med.exon %>%
+  filter(!PLATE %in% c("203-1", "203-2", "209")) %>%
+  mutate(NAME = case_when(
+    CELL == "PBMC" & DENATURATION == "72" & RT_LENGTH == "60" & TTH == "0" & T4 == "0.5" & LYSIS_VOLUME == "1" & OLIGOT_DILUTION_FACTOR == "5" & METHOD == "FASTSMART" & NACL == "0" & 
+    ENZYME %in% c("SIV", "MAXIMA") & PCR == "6" & LYSIS == "TRITON" & LIBRARYPREP == "NEXTERAXT" & RT_TEMP == "37" & DENATURATION_TIME == "3" & TSO == "1"~ "Trt.1.2%\n1µg",
+    CELL == "PBMC" & DENATURATION == "72" & RT_LENGTH == "60" & TTH == "0" & T4 == "0.25" & LYSIS_VOLUME == "1" & OLIGOT_DILUTION_FACTOR == "5" & METHOD == "FASTSMART" & NACL == "0" & 
+    ENZYME %in% c("SIV", "MAXIMA") & PCR == "6" & LYSIS == "TRITON" & LIBRARYPREP == "NEXTERAXT" & RT_TEMP == "37" & DENATURATION_TIME == "3" & TSO == "1"~ "Trt.1.2%\n0.5µg",
+    CELL == "PBMC" & DENATURATION == "72" & RT_LENGTH == "60" & TTH == "0" & T4 == "0.125"  & LYSIS_VOLUME == "1" & OLIGOT_DILUTION_FACTOR == "5" & METHOD == "FASTSMART" & NACL == "0" & 
+    ENZYME %in% c("SIV", "MAXIMA") & PCR == "6" & LYSIS == "TRITON_LOW" & LIBRARYPREP == "NEXTERAXT" & RT_TEMP == "37" & DENATURATION_TIME == "3" & TSO == "1"~ "Trt.0.2%\n0.25µg",
+    CELL == "PBMC" & DENATURATION == "72" & RT_LENGTH == "60" & TTH == "0" & T4 == "0.25"  & LYSIS_VOLUME == "1" & OLIGOT_DILUTION_FACTOR == "5" & METHOD == "FASTSMART" & NACL == "0" & 
+    ENZYME %in% c("SIV", "MAXIMA") & PCR == "6" & LYSIS == "TRITON_LOW" & LIBRARYPREP == "NEXTERAXT" & RT_TEMP == "37" & DENATURATION_TIME == "3" & TSO == "1"~ "Trt.0.2%\n0.5µg",
+    CELL == "PBMC" & DENATURATION == "72" & RT_LENGTH == "60" & TTH == "0" & T4 == "0.375"  & LYSIS_VOLUME == "1" & OLIGOT_DILUTION_FACTOR == "5" & METHOD == "FASTSMART" & NACL == "0" & 
+    ENZYME %in% c("SIV", "MAXIMA") & PCR == "6" & LYSIS == "TRITON_LOW" & LIBRARYPREP == "NEXTERAXT" & RT_TEMP == "37" & DENATURATION_TIME == "3" & TSO == "1"~ "Trt.0.2%\n0.75µg")) %>%
+  filter(!is.na(NAME), DEPTH == 100000) %>%
+      mutate(NAME = factor(NAME, levels = c("Trt.1.2%\n0.5µg", "Trt.1.2%\n1µg", "Trt.0.2%\n0.25µg", "Trt.0.2%\n0.5µg", "Trt.0.2%\n0.75µg")))
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+summaryPlots(mydata = mydata, title = "T4_LYSIS", mycols = c(
+   "Trt.1.2%\n0.5µg" = "#FFFFD9", 
+   "Trt.1.2%\n1µg" = "#EDF8B1", 
+   "Trt.0.2%\n0.25µg" = "#C7E9B4", 
+   "Trt.0.2%\n0.5µg" = "#7FCDBB", 
+   "Trt.0.2%\n0.75µg" = "#41B6C4"))
+
+# TSO
+mydata <- med.exon %>%
+  filter(PLATE %in% c("240-1", "240-2")) %>%
+  mutate(NAME = case_when(
+    TSO == 1 ~ "TSO 1x",
+    TSO == 2 ~ "TSO 2x",
+    TSO == 3 ~ "TSO 3x",
+    TSO == 4 ~ "TSO 4x")) %>%
+  filter(!is.na(NAME), DEPTH == 100000) %>%
+      mutate(NAME = factor(NAME, levels = c("TSO 1x", "TSO 1.5x", "TSO 2x", "TSO 3x", "TSO 4x", "TSO 5x")))
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+
+summaryPlots(mydata = mydata, title = "T4_TSO", mycols = c(
+   "TSO 1x" = "#FFFFD9", 
+   "TSO 2x" = "#EDF8B1", 
+   "TSO 3x" = "#C7E9B4", 
+   "TSO 4x" = "#7FCDBB"))
+
+# HOMEMADE T4
+mydata <- med.exon %>%
+  # ERROR IN THE NAMING - WAS ROW-WISE AND NOT COLUMN WISE
+  mutate(NAME = case_when(
+    PLATE == "251" & grepl(paste0(sapply(1:8, function(x) paste0("_",LETTERS[1:4], x )), collapse = "|"), ID) ~ "Homemade T4g32p\n5 µg",
+    PLATE == "251" & grepl(paste0(sapply(1:8, function(x) paste0("_", LETTERS[5:8], x)), collapse = "|"), ID) ~ "no T4g32p",
+    )) %>%
+  filter(!is.na(NAME), DEPTH == 100000)
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+
+summaryPlots(mydata = mydata, title = "EPFL_T4", mycols = c(
+   "Homemade T4g32p\n5 µg" = "#FFFFD9", 
+   "no T4g32p" = "#41B6C4"))
+
+
+```
+
+```{r low amp dilution, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
+
+### Dilution or no dilution before cDNA ?
+mydata <- med.exon %>%
+  mutate(NAME = 
+           case_when(
+             PLATE %in% c("287") & grepl(x = ID, "_diluted_") ~ "FS-LA-16c\ndiluted",
+             PLATE %in% c("287") ~ "FS-LA-16c")) %>%
+  filter(!is.na(NAME), DEPTH == 100000) %>%
+  mutate(NAME = factor(as.factor(NAME), levels = c("FS-LA-16c", "FS-LA-16c\ndiluted")),
+         sce.ids = str_replace_all(paste0("X", ID, "_100000_1"), "-", "."))
+write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
+
+summaryPlots(mydata, "PBMC-LowAmp_dilution",mycols = c(
+  "FS-LA-16c" = "#FFFFCC",
+  "FS-LA-16c\ndiluted" = "#A1DAB4"))
+```

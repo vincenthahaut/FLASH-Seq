@@ -1,9 +1,9 @@
 library(gggenes)  # Arrow charts are not well covered by ggplot but worked well with this one.
 
-timing <- read_tsv("FS_timing.txt")
+timing <- read_tsv("/home/vincent.hahaut/Desktop/FLASH-Seq/R/timing_graph/FS_timing.txt")
 
 # 0. Should you produce the first main main figure or the Low Amplification comparison ? 
-LOWAMP = FALSE
+LOWAMP = "ALL"
 
 # 1. Tidy the data
 mytimes <- timing %>%
@@ -31,11 +31,17 @@ if(LOWAMP == FALSE){
   pA <- ggplot(mytimes.tpm) +
     geom_vline(xintercept = seq(0,600,60), linetype = "dashed", color = "darkgrey") +
     scale_x_continuous(breaks = seq(0,600,60), labels = 0:10, "Hours") 
-} else {
+} else if(LOWAMP == TRUE) {
   mytimes.tpm <- filter(mytimes, METHOD %in% c("1-FS-LA", "2-FS"))
   pA <- ggplot(mytimes.tpm) +
     geom_vline(xintercept = seq(0,420,60), linetype = "dashed", color = "darkgrey") +
     scale_x_continuous(breaks = seq(0,420,60), labels = 0:7, "Hours") 
+} else if(LOWAMP == "ALL"){
+  mytimes.tpm <- mytimes
+  pA <- ggplot(mytimes.tpm) +
+    geom_vline(xintercept = seq(0,600,60), linetype = "dashed", color = "darkgrey") +
+    scale_x_continuous(breaks = seq(0,600,60), labels = 0:10, "Hours") 
+  
 }
 
 # 3. Create the theme of the graph
@@ -45,9 +51,9 @@ pA <- pA +theme_cowplot() +
         axis.line.y = element_blank(),
         axis.ticks.y = element_blank(),
         axis.title.x = element_text(size = 28),
-        legend.text = element_text(size = 18),
-        axis.text.x = element_text(size = 24), 
-        axis.text.y = element_text(size = 28, face = "bold"), 
+        legend.position = "none",
+        axis.text.x = element_text(size = 22), 
+        axis.text.y = element_text(size = 22, face = "bold"), 
         legend.title = element_blank()) +
   ylab("") +
   scale_fill_manual(values = 
@@ -89,10 +95,16 @@ if(LOWAMP == FALSE){
            scale_y_discrete(labels=c("FS", "SS3", "SS2", "SSsc")) + 
            theme(legend.position = "bottom") + 
            guides(colour = guide_legend(nrow = 3, override.aes = list(size=12, stroke = 2), title = "Start")),
-         filename = "timing.tiff", dpi = 200, width = 14, height = 6)
-} else {
+         filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/timing.tiff", dpi = 450, width = 14, height = 6, bg = "white")
+} else if(LOWAMP == TRUE){
   ggsave(pA + 
            scale_y_discrete(labels=c("FS-LA", "FS")) + 
            guides(colour = guide_legend(override.aes = list(size=12, stroke = 2), title = "Start")), 
-         filename = "timing_FSonly.tiff", dpi = 200, width = 12, height = 3)
+         filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/timing_FSonly.tiff", dpi = 450, width = 12, height = 3, bg = "white")
+} else {
+  ggsave(pA + 
+           scale_y_discrete(labels=rev(c("SSsc", "SS2", "SS3", "FS", "FS-LA"))) + 
+           guides(colour = guide_legend(override.aes = list(size=12, stroke = 2), title = "Start")), 
+         filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/timing_FSonly.ALL.tiff", dpi = 450, width = 12, height = 4.5, bg = "white")
+  
 }

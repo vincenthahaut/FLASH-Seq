@@ -200,7 +200,7 @@ cols <- c("#1B9E77", "#D95F02", "#7570B3", "#E7298A", "#66A61E", "#E6AB02", "#A6
 p.variants <- plot_grid(nrow = 2,
                         # available variants
                         ggplot(filter(vcf.dp.aggr, name %in% c("available.variants", "total.vars")), aes(x = as.numeric(DEPTH), fill = name, color = name)) + 
-                          geom_hline(yintercept = seq(0,4000,500), linetype = "dashed", color = "darkgrey") +
+                          geom_hline(yintercept = seq(0,3500,500), linetype = "dashed", color = "darkgrey") +
                           geom_errorbar(aes(ymin = m - s, ymax = m + s), position = position_dodge(1000)) +
                           geom_line(aes(y = m, group = name), position = position_dodge(1000)) +
                           geom_point(aes(y = m), position = position_dodge(1000)) +
@@ -209,8 +209,8 @@ p.variants <- plot_grid(nrow = 2,
                           theme(legend.position = "none", legend.title = element_blank(),axis.text.x = element_text(angle = 45, hjust = 1, size = 9)) +
                           scale_x_continuous(breaks = c(5000, 10000,20000, 40000, 50000,75000,100000, 125000, 250000, 375000, 500000, 750000), 
                                              labels = c("", "","", "", "50K","75K","100K", "125K", "250K", "375K", "500K", "750K")) +
-                          scale_y_continuous(breaks = seq(0,4000,500)) +
-                          xlab("Downsampled Reads") + ylab("Variants") + ggtitle("Total Variants"),
+                          scale_y_continuous(breaks = seq(0,4000,500), limits = c(0,4000)) +
+                          xlab("Downsampled Reads") + ylab("SNPs") + ggtitle("Total SNPs"),
                         # False negative / True positive
     ggplot(filter(vcf.dp.aggr, name %in% c("true_positive.QUAL", "false_negative", "true_positive")), aes(x = as.numeric(DEPTH), fill = name, color = name)) + 
     geom_hline(yintercept = seq(0,1500,500), linetype = "dashed", color = "darkgrey") +
@@ -222,11 +222,11 @@ p.variants <- plot_grid(nrow = 2,
     theme(legend.position = "none", legend.title = element_blank(),axis.text.x = element_text(angle = 45, hjust = 1, size = 9)) +
     scale_x_continuous(breaks = c(5000, 10000,20000, 40000, 50000,75000,100000, 125000, 250000, 375000, 500000, 750000), 
                        labels = c("", "","", "", "50K","75K","100K", "125K", "250K", "375K", "500K", "750K")) +
-    scale_y_continuous(breaks = seq(0,2000,500)) +
-    xlab("Downsampled Reads") + ylab("Variants") + ggtitle("True Variants"),
+    scale_y_continuous(breaks = seq(0,2000,500), limits = c(0,2000)) +
+    xlab("Downsampled Reads") + ylab("SNPs") + ggtitle("True Variants"),
     # False Positive
   ggplot(filter(vcf.dp.aggr, name %in% c("false_positive", "false_positive.QUAL")), aes(x = as.numeric(DEPTH), fill = name, color = name)) + 
-    geom_hline(yintercept = seq(0,2500,500), linetype = "dashed", color = "darkgrey") +
+    geom_hline(yintercept = seq(0,2000,500), linetype = "dashed", color = "darkgrey") +
     geom_errorbar(aes(ymin = m - s, ymax = m + s), position = position_dodge(1000)) +
     geom_line(aes(y = m, group = name), position = position_dodge(1000)) +
     geom_point(aes(y = m), position = position_dodge(1000)) +
@@ -235,11 +235,11 @@ p.variants <- plot_grid(nrow = 2,
     theme(legend.position = "none", legend.title = element_blank(),axis.text.x = element_text(angle = 45, hjust = 1, size = 9)) +
     scale_x_continuous(breaks = c(5000, 10000,20000, 40000, 50000,75000,100000, 125000, 250000, 375000, 500000, 750000), 
                        labels = c("", "","", "", "50K","75K","100K", "125K", "250K", "375K", "500K", "750K")) +
-    scale_y_continuous(breaks = seq(0,2500,500)) +
-    xlab("Downsampled Reads") + ylab("Variants") + ggtitle("False Positive"),
+    scale_y_continuous(breaks = seq(0,2500,500), limits = c(0,2500)) +
+    xlab("Downsampled Reads") + ylab("SNPs") + ggtitle("False Positives"),
   # False Positive
   ggplot(filter(vcf.dp.aggr, name %in% c("percentage_true", "percentage_true.QUAL")), aes(x = as.numeric(DEPTH), fill = name, color = name)) + 
-    geom_hline(yintercept = seq(0,100,20), linetype = "dashed", color = "darkgrey") +
+    geom_hline(yintercept = seq(0,60,20), linetype = "dashed", color = "darkgrey") +
     geom_errorbar(aes(ymin = m - s, ymax = m + s), position = position_dodge(1000)) +
     geom_line(aes(y = m, group = name), position = position_dodge(1000)) +
     geom_point(aes(y = m), position = position_dodge(1000)) +
@@ -248,21 +248,21 @@ p.variants <- plot_grid(nrow = 2,
     theme(legend.position = "none", legend.title = element_blank(),axis.text.x = element_text(angle = 45, hjust = 1, size = 9)) +
     scale_x_continuous(breaks = c(5000, 10000,20000, 40000, 50000,75000,100000, 125000, 250000, 375000, 500000, 750000), 
                        labels = c("", "","", "", "50K","75K","100K", "125K", "250K", "375K", "500K", "750K")) +
-    scale_y_continuous(breaks = seq(0,100,20)) +
-    xlab("Downsampled Reads") + ylab("Variants (%)") + ggtitle("True Positives (%)")
+    scale_y_continuous(breaks = seq(0,80,20), limits = c(0,80)) +
+    xlab("Downsampled Reads") + ylab("SNPs (%)") + ggtitle("True Positives (%)")
 )
 
 # 7.2. Influence of the variant coverage
 vcf.dp.depth.aggr <- vcf.dp %>% 
   bind_rows() %>%
   mutate(bin = case_when(
-    DP < 4 ~ "DP≤3",
+    DP < 4 ~ "DP<3",
     DP == 4 ~ "DP=4",
     DP == 5 ~ "DP=5",
     DP > 5 & DP <= 10 ~ "5<DP≤10",
     DP > 10 & DP <= 20 ~ "11<DP≤20",
     DP > 20  ~ "DP>20"),
-    bin = factor(bin, levels = c("DP≤3","DP=4","DP=5","5<DP≤10","11<DP≤20","DP>20"))) %>%
+    bin = factor(bin, levels = c("DP<3","DP=4","DP=5","5<DP≤10","11<DP≤20","DP>20"))) %>%
   group_by(DEPTH, ID, bin) %>%
   summarise(true_positive = sum(variant.dp.inRef),
             false_positive = sum(variant.dp.NotinRef),
@@ -304,8 +304,8 @@ p.depth <- plot_grid(nrow = 2,
     xlab("Downsampled Reads") + ylab("Variants") + ggtitle("False Positive")
 )
 
-ggsave(p.depth, bg = "white", filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_VARIANTS_DEPTH.tiff", dpi = 200, height = 8, width = 7)
-ggsave(p.variants, bg = "white", filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_VARIANTS.tiff", dpi = 200, height = 8, width = 12)
+ggsave(p.depth, bg = "white", filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_VARIANTS_DEPTH.tiff", dpi = 450, height = 8, width = 7)
+ggsave(p.variants, bg = "white", filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_VARIANTS.tiff", dpi = 450, height = 8, width = 12)
 
 
 # True positives / False positives relationship
@@ -331,7 +331,7 @@ corrs <- ggplot() +
   geom_text(data = data.frame(x=2000,y=2800, DEPTH = "5000"), aes(x = 2000, y = 2600, label = "cor: 0.988599"), size = 7)
 
 
-ggsave(corrs, bg = "white", filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_VARIANTS_corrs.tiff", dpi = 200, height = 6, width = 8)
+ggsave(corrs, bg = "white", filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_VARIANTS_corrs.tiff", dpi = 450, height = 6, width = 8)
 
 
 ####### 10x Variant Calling ############
@@ -461,4 +461,4 @@ results %>%
   group_by(nCells) %>%
   summarise(mean(nReads), sd(nReads))
 
-ggsave(p.variants.10x, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/10x_variant_calling.tiff", dpi = 300, height = 6, width = 10, bg = "white")
+ggsave(p.variants.10x, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/10x_variant_calling.tiff", dpi = 450, height = 6, width = 10, bg = "white")

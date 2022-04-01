@@ -13,13 +13,14 @@
 * 4_aggregate_files_functions.R
 	* Functions to aggregate various input (featurecounts, STAR.log, ...)
 * 6_singleCell_functions.R
-	* Wrappers for scRNA processing. 
+	* Functions to process scRNA data. 
 * shinyUMAP.R
-	* Given a seurat object with a standard pipeline and a facultative differential expression (seurat) table, create an interractive shiny window where the user can visualize the seurat cluster, gene expression and differential expression results together. Kinda like UCSC cell browser but with the DEG results and from the R session. Tested with up-to 100K cells. 
+	* Given a seurat object processed with a standard pipeline and a facultative differential expression (seurat) table, create an interractive shiny window where the user can visualize the seurat cluster, gene expression and differential expression results together. Kinda like UCSC cell browser but with the DEG results and from the R session. Tested with up-to 100K cells. 
 
 ## Prepare files
 
 * 5_aggregate_preprocess_results.R
+	* Uses 4_aggregate_files_functions.R to aggregate all the files.
 
 ## Analysis
 
