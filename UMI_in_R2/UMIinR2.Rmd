@@ -400,14 +400,14 @@ colnames(med) <- c("count_0", "count_1", "count_5", "ID", "TYPE")
 med <- pivot_longer(med, cols = c(count_0, count_1, count_5), names_to = "threshold", values_to = "counts") %>%
   mutate(GROUP = ifelse(grepl("316", ID), "FS-UMI\nCTAAC\nRetinal Organoids", "SS3\nMice Fibroblast\nHagemann-J. et al\nE-MTAB-8735"),
          threshold = case_when(threshold == "count_0" ~ ">0 read",
-                               threshold == "count_1" ~ ">1 reads",
+                               threshold == "count_1" ~ ">1 read",
                                threshold == "count_5" ~ ">5 reads"))
 
 # 4. Visualize results
 p.signif <- med %>% 
   filter(GROUP == "FS-UMI\nCTAAC\nRetinal Organoids") %>%
   group_by(threshold) %>%
-  rstatix::wilcox_test(counts~TYPE) %>%
+  rstatix::wilcox_test(counts~TYPE, p.adjust.method = "bonferroni") %>%
   filter(p < 0.05) %>% 
   rstatix::add_y_position(fun = "max", scales = "free") %>%
   mutate(p.adj.signif = formatC(p, format = "e", digits = 2))
@@ -424,8 +424,7 @@ p.counts.umi <- ggplot() +
         legend.title = element_blank(),
         legend.position = c(0.95, 0.90), 
         legend.background = element_blank()) +
-  scale_y_continuous(breaks = seq(0,4500,500)) +
-  ylim(c(0,5000)) +
+  scale_y_continuous(breaks = seq(0,4500,500), labels = scales::comma, limits = c(0,5000)) +
   ggtitle("FS-UMI CTAAC") +
   geom_text(aes(x = c(0.75, 1.25), y = c(0,0), label = c(n = "n = 380", "n = 213")), size = 4) 
 
@@ -437,7 +436,7 @@ p.counts.umi.SS3 <- ggplot() +
   theme(legend.position = "none", axis.text.x = element_text(size = 9)) + 
   xlab("") +
   scale_fill_brewer(palette = "Set1") +
-  scale_y_continuous(breaks = seq(0,3000,500), limits = c(0,3500)) +
+  scale_y_continuous(breaks = seq(0,3000,500), limits = c(0,3500), labels = scales::comma) +
   ylab("Genes Detected") + ggtitle("SS3") +
   geom_text(aes(x = 1, y = 0, label = "n = 365"), size = 4) 
 

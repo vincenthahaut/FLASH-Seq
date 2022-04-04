@@ -861,16 +861,18 @@ for(i in unique(ssce.FS.all$cell_type)){
 p.diversity <- res %>%
   filter(!cell_type %in% c("Apoptotic Cells", "Amacrine Fate")) %>%
   pivot_longer(cols = c("DROPLET", "SMART")) %>% 
+  mutate(name = ifelse(name == "DROPLET", "10x Genomics", "FS - all reads")) %>%
   ggplot() +
   geom_hline(yintercept = seq(2000,10000,1000), linetype = "dashed", color = "darkgrey") +
   geom_violin(aes(x = cell_type, fill = name, y = value)) +
   geom_boxplot(aes(x = cell_type, fill = name, y = value), width = 0.1, position = position_dodge(width = 0.9)) +
   facet_wrap("cell_type", scales = "free_y", ncol = 1) +
-  scale_fill_manual(values = c("SMART" = "#FF850D", 
-                               "DROPLET" = "#2ac7c2")) +
+  scale_fill_manual(values = c("FS - all reads" = "#FF850D", 
+                               "10x Genomics" = "#2ac7c2")) +
+  scale_y_continuous(labels = scales::comma) +
   coord_flip() +
   theme_bw(base_size = 18) +
-  theme(axis.text.y = element_blank(),legend.position = "none", legend.title = element_blank(), axis.ticks.y = element_blank()) +
+  theme(axis.text.y = element_blank(),legend.position = "bottom", legend.direction = "horizontal", legend.title = element_blank(), axis.ticks.y = element_blank()) +
   ylab("Gene Diversity") + xlab("") 
 
 ggsave(p.diversity, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_diversity.tiff",
@@ -946,6 +948,7 @@ p.diversity <- res %>%
   geom_violin(aes(x = name, fill = name, y = value)) +
   geom_boxplot(aes(x = name, fill = name, y = value), width = 0.1, position = position_dodge(width = 0.9)) +
   ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}", step.increase = 0.05, step.group.by = "cell_type", tip.length = 0.01, size = 4) +
+  scale_y_continuous(seq(2000,8000,2000), labels = c("2,000", "4,000", "6,000", "8,000"), name = "Gene Diversity") + 
   scale_fill_manual(values = c("UMI" = "#E7298A", 
                                "INTERNAL" = "#7570B3",
                                "DROPLET" = "#2ac7c2")) +
@@ -1005,6 +1008,7 @@ p.detected <- df %>%
                                "INTERNAL" = "#7570B3",
                                "DROPLET" = "#2ac7c2")) +
   facet_wrap("cell_type", scales = "free_x", nrow = 2) +
+  scale_y_continuous(breaks = seq(0,8000,2000), labels = c("0", "2,000", "4,000", "6,000", "8,000")) + 
   theme_bw(base_size = 18) +
   ylab("Gene Detected") + xlab("") +
   theme(legend.position = "none", 
@@ -1015,8 +1019,9 @@ p.detected <- df %>%
 ggsave(p.detected, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_detected.downsample.tiff",
        dpi = 450, width = 16, height = 10, bg = "white")
 
-ggsave(plot_grid(p.diversity, p.detected, nrow = 2), filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_detected_diversity.downsample.tiff",
-       dpi = 450, width = 20, height = 14, bg = "white")
+ggsave(plot_grid(p.diversity + theme(legend.position = "right") + ylab("Gene Diversity"), 
+                 p.detected + theme(legend.position = "right")+ ylab("Genes Detected"), nrow = 2), filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_detected_diversity.downsample.tiff",
+       dpi = 450, width = 22, height = 14, bg = "white")
 
 ```
 
@@ -1089,12 +1094,12 @@ med <- med %>%
   "Bipolar Cells (ON)", "Amacrine Cells (GABA)", "Photoreceptor Fate", 
   "Müller Fate", "Cone Fate", "Horizontal Cells", "Photoreceptor/Bipolar Fate")) %>%
   mutate(name = case_when(
-    name == "count_0.all" ~ "FS-UMI\nAll\nGenes",
-    name == "count_0.internal" ~ "FS-UMI\nInternal\nGenes",
-    name == "count_0.umi" ~ "FS-UMI\nUMI\nGenes",
+    name == "count_0.all" ~ "FS - all reads",
+    name == "count_0.internal" ~ "FS - internal reads",
+    name == "count_0.umi" ~ "FS - UMI reads",
     name == "count_0.salmon"~ "FS-UMI\nAll\nTranscripts",
-    name == "10x Genomics" ~ "10x\nGenomics\nGenes"),
-    name = factor(name, levels = c("10x\nGenomics\nGenes", "FS-UMI\nUMI\nGenes", "FS-UMI\nInternal\nGenes", "FS-UMI\nAll\nGenes", "FS-UMI\nAll\nTranscripts"))) 
+    name == "10x Genomics" ~ "10x Genomics"),
+    name = factor(name, levels = c("10x Genomics", "FS - UMI reads", "FS - internal reads", "FS - all reads", "FS-UMI\nAll\nTranscripts"))) 
 
 # 6. Statistical significance
 
@@ -1118,13 +1123,14 @@ p.gene.per.cell <-
   geom_boxplot(data = filter(med, name != "FS-UMI\nAll\nTranscripts"), aes(x = name, y = value, fill = name), width = 0.05) +
   ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}", step.increase = 0.025, step.group.by = "cell_type.internal", tip.length = 0.01, size = 4.5) +
   scale_fill_manual(values = c(#"FS-UMI\nAll\nTranscripts" = "#1B9E77",
-                               "FS-UMI\nAll\nGenes" = "#D95F02",
-                               "FS-UMI\nInternal\nGenes" = "#7570B3", 
-                               "FS-UMI\nUMI\nGenes" = "#E7298A",
-                               "10x\nGenomics\nGenes" = "#2ac7c2")) +
+                               "FS - all reads" = "#D95F02",
+                               "FS - internal reads" = "#7570B3", 
+                               "FS - UMI reads" = "#E7298A",
+                               "10x Genomics" = "#2ac7c2")) +
   theme_bw(base_size = 24) +
-  scale_y_continuous(breaks = seq(0,7500,2500)) + 
-  theme(legend.position = "none", 
+  scale_y_continuous(breaks = seq(0,7500,2500), labels = scales::comma) + 
+  theme(legend.position = "bottom", legend.title = element_blank(), legend.box="horizontal", legend.margin=margin(),
+        axis.title.y = element_text(size = 28),
         axis.ticks.x = element_blank(), 
         panel.grid.minor = element_blank(),
         panel.grid.major = element_blank(),
@@ -1144,7 +1150,7 @@ p.transcripts.per.cell <-
   geom_boxplot(data = filter(med, name  ==  "FS-UMI\nAll\nTranscripts"), aes(x = cell_type.internal, y = value, fill = cell_type.internal), width = 0.05) +
   scale_fill_manual(values = celltype.colors()) +
   theme_bw(base_size = 24) +
-  scale_y_continuous(breaks = seq(0,20000,2500)) + 
+  scale_y_continuous(breaks = seq(0,20000,2500), labels = scales::comma) + 
   theme(legend.position = "none", 
         axis.ticks.x = element_blank(), 
         panel.grid.minor = element_blank(),

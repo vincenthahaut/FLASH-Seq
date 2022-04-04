@@ -607,7 +607,7 @@ ggsave(p.logo, bg = "white", filename = "/home/vincent.hahaut/data_storage/FS_in
 
 # 1. Load file containing the sequence adjacent to the UMI
 # UMI reads assigned to exon / intron features
-res.annotated.final <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/bias.umi.exon_intron_unstranded.rds")
+1391221 <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/bias.umi.exon_intron_unstranded.rds")
 
 # 2. Aggregate results
 # Could probably clean-up this part

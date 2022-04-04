@@ -197,7 +197,7 @@ vcf.dp.aggr <- vcf.dp %>%
 # 7.1. False positives, true positives, total number of variants, ...
 cols <- c("#1B9E77", "#D95F02", "#7570B3", "#E7298A", "#66A61E", "#E6AB02", "#A6761D", "#666666")
 
-p.variants <- plot_grid(nrow = 2,
+p.variants <- plot_grid(nrow = 1,
                         # available variants
                         ggplot(filter(vcf.dp.aggr, name %in% c("available.variants", "total.vars")), aes(x = as.numeric(DEPTH), fill = name, color = name)) + 
                           geom_hline(yintercept = seq(0,3500,500), linetype = "dashed", color = "darkgrey") +
@@ -208,8 +208,8 @@ p.variants <- plot_grid(nrow = 2,
                           theme_cowplot(font_size = 16) + 
                           theme(legend.position = "none", legend.title = element_blank(),axis.text.x = element_text(angle = 45, hjust = 1, size = 9)) +
                           scale_x_continuous(breaks = c(5000, 10000,20000, 40000, 50000,75000,100000, 125000, 250000, 375000, 500000, 750000), 
-                                             labels = c("", "","", "", "50K","75K","100K", "125K", "250K", "375K", "500K", "750K")) +
-                          scale_y_continuous(breaks = seq(0,4000,500), limits = c(0,4000)) +
+                                             labels = c("", "","", "", "","","100K", "125K", "250K", "375K", "500K", "750K")) +
+                          scale_y_continuous(breaks = seq(0,4000,500), limits = c(0,4000), labels = c("0",  "500", "1,000", "1,500", "2,000", "2,500", "3,000", "3,500", "4,000")) +
                           xlab("Downsampled Reads") + ylab("SNPs") + ggtitle("Total SNPs"),
                         # False negative / True positive
     ggplot(filter(vcf.dp.aggr, name %in% c("true_positive.QUAL", "false_negative", "true_positive")), aes(x = as.numeric(DEPTH), fill = name, color = name)) + 
@@ -221,8 +221,8 @@ p.variants <- plot_grid(nrow = 2,
     theme_cowplot(font_size = 16) + 
     theme(legend.position = "none", legend.title = element_blank(),axis.text.x = element_text(angle = 45, hjust = 1, size = 9)) +
     scale_x_continuous(breaks = c(5000, 10000,20000, 40000, 50000,75000,100000, 125000, 250000, 375000, 500000, 750000), 
-                       labels = c("", "","", "", "50K","75K","100K", "125K", "250K", "375K", "500K", "750K")) +
-    scale_y_continuous(breaks = seq(0,2000,500), limits = c(0,2000)) +
+                       labels = c("", "","", "", "","","100K", "125K", "250K", "375K", "500K", "750K")) +
+    scale_y_continuous(breaks = seq(0,2000,500), limits = c(0,2000), labels = c("0", "500", "1,000", "1,500", "2,000")) +
     xlab("Downsampled Reads") + ylab("SNPs") + ggtitle("True Variants"),
     # False Positive
   ggplot(filter(vcf.dp.aggr, name %in% c("false_positive", "false_positive.QUAL")), aes(x = as.numeric(DEPTH), fill = name, color = name)) + 
@@ -234,8 +234,8 @@ p.variants <- plot_grid(nrow = 2,
     theme_cowplot(font_size = 16) + 
     theme(legend.position = "none", legend.title = element_blank(),axis.text.x = element_text(angle = 45, hjust = 1, size = 9)) +
     scale_x_continuous(breaks = c(5000, 10000,20000, 40000, 50000,75000,100000, 125000, 250000, 375000, 500000, 750000), 
-                       labels = c("", "","", "", "50K","75K","100K", "125K", "250K", "375K", "500K", "750K")) +
-    scale_y_continuous(breaks = seq(0,2500,500), limits = c(0,2500)) +
+                       labels = c("", "","", "", "","","100K", "125K", "250K", "375K", "500K", "750K")) +
+    scale_y_continuous(breaks = seq(0,2500,500), limits = c(0,2500), labels = c("0",  "500", "1,000", "1,500", "2,000", "2,500")) +
     xlab("Downsampled Reads") + ylab("SNPs") + ggtitle("False Positives"),
   # False Positive
   ggplot(filter(vcf.dp.aggr, name %in% c("percentage_true", "percentage_true.QUAL")), aes(x = as.numeric(DEPTH), fill = name, color = name)) + 
@@ -247,7 +247,7 @@ p.variants <- plot_grid(nrow = 2,
     theme_cowplot(font_size = 16) + 
     theme(legend.position = "none", legend.title = element_blank(),axis.text.x = element_text(angle = 45, hjust = 1, size = 9)) +
     scale_x_continuous(breaks = c(5000, 10000,20000, 40000, 50000,75000,100000, 125000, 250000, 375000, 500000, 750000), 
-                       labels = c("", "","", "", "50K","75K","100K", "125K", "250K", "375K", "500K", "750K")) +
+                       labels = c("", "","", "", "","","100K", "125K", "250K", "375K", "500K", "750K")) +
     scale_y_continuous(breaks = seq(0,80,20), limits = c(0,80)) +
     xlab("Downsampled Reads") + ylab("SNPs (%)") + ggtitle("True Positives (%)")
 )
@@ -299,7 +299,7 @@ p.depth <- plot_grid(nrow = 2,
     theme_cowplot(font_size = 20) +
     theme(legend.position = "none", legend.title = element_blank(),axis.text.x = element_text(angle = 45, hjust = 1, size = 12)) +
     scale_x_continuous(breaks = c(5000, 10000,20000, 40000, 50000,75000,100000, 125000, 250000, 375000, 500000, 750000), 
-                       labels = c("", "","", "", "50K","75K","100K", "125K", "250K", "375K", "500K", "750K")) +
+                       labels = c("", "","", "", "","","100K", "125K", "250K", "375K", "500K", "750K")) +
     scale_y_continuous(breaks = seq(0,700,100)) +
     xlab("Downsampled Reads") + ylab("Variants") + ggtitle("False Positive")
 )
@@ -307,6 +307,7 @@ p.depth <- plot_grid(nrow = 2,
 ggsave(p.depth, bg = "white", filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_VARIANTS_DEPTH.tiff", dpi = 450, height = 8, width = 7)
 ggsave(p.variants, bg = "white", filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_VARIANTS.tiff", dpi = 450, height = 8, width = 12)
 
+ggsave(p.variants, bg = "white", filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_VARIANTS.tiff", dpi = 450, width = 20, height = 4)
 
 # True positives / False positives relationship
 tp_fp <- vcf.dp %>% 
@@ -323,12 +324,15 @@ corrs <- ggplot() +
   geom_vline(xintercept = seq(1000,3000,1000), linetype = "dashed", color = "darkgrey") +
   geom_point(data = tp_fp, aes(false_positive, true_positive, color = DEPTH), size = 0.75, alpha = 0.75) +
   geom_smooth(data = tp_fp, aes(false_positive, true_positive), method = lm, color = "black") +
-  scale_color_manual(values = mycolors) +
+  scale_color_manual(values = c(RColorBrewer::brewer.pal(8, "Dark2"), RColorBrewer::brewer.pal(8, "Set1"))) +
   ylab("True Positives") + 
   xlab("False Positives") +
   theme_cowplot(font_size = 20) +
+  scale_y_continuous(breaks = seq(0,3000,1000), labels = c("0", "1,000", "2,000", "3,000")) +
+  scale_x_continuous(breaks = seq(0,3000,1000), labels = c("0", "1,000", "2,000", "3,000")) +
   geom_text(data = data.frame(x=2000,y=2800, DEPTH = "5000"), aes(x = 2000, y = 2800, label = "p-value < 2e-16"), size = 7) +
-  geom_text(data = data.frame(x=2000,y=2800, DEPTH = "5000"), aes(x = 2000, y = 2600, label = "cor: 0.988599"), size = 7)
+  geom_text(data = data.frame(x=2000,y=2800, DEPTH = "5000"), aes(x = 2000, y = 2600, label = "cor: 0.988599"), size = 7) +
+  guides(color = guide_legend(override.aes = list(size = 3)))
 
 
 ggsave(corrs, bg = "white", filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_VARIANTS_corrs.tiff", dpi = 450, height = 6, width = 8)
@@ -438,8 +442,8 @@ p.variants.10x <- plot_grid(
     scale_fill_manual(values = cols[c(2,6,1)]) +
     theme_bw(base_size = 16) + 
     theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1)) + 
-    scale_y_continuous(breaks = seq(0,1000,250)) +
-    xlab("") + ylab("Variants"),
+    scale_y_continuous(breaks = seq(0,1000,250), labels = c("0", "250", "500", "750", "1,000")) +
+    xlab("") + ylab("SNPs"),
   results %>%
     dplyr::select(nCells, total.variant, available.variants) %>%
     pivot_longer(-nCells) %>%
@@ -453,8 +457,8 @@ p.variants.10x <- plot_grid(
     scale_fill_manual(values = cols[c(4,5)]) +
     theme_bw(base_size = 16) + 
     theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1)) + 
-    scale_y_continuous(breaks = seq(0,1000,250)) +
-    xlab("") + ylab("Variants")
+    scale_y_continuous(breaks = seq(0,1000,250), labels = c("0", "250", "500", "750", "1,000")) +
+    xlab("") + ylab("SNPs")
 )
 
 results %>%

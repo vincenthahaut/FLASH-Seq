@@ -17,7 +17,7 @@ source("/home/vincent.hahaut/Desktop/FLASH-Seq/R/general/4_aggregate_files_funct
 
 # 2. ANNOTATIONS
 gtf.path <- "/home/vincent.hahaut/data_storage/REFERENCES/hsap_fastsmart/REFERENCE/GTF/gencode.v34.primary_assembly.annotation.gtf"
-gtf <- rtracklayer::import(gtf.path)
+#gtf <- rtracklayer::import(gtf.path)
 
 # 3. COLORS
 mycolors <- as.vector(c(RColorBrewer::brewer.pal(name = "Dark2", 8),
@@ -64,6 +64,14 @@ processExpressGenes <- function(mydata = NULL, SAMPLESHEET = SAMPLESHEET, STAR.l
     return()
 }
 
+#' summaryPlots
+#' 
+#' Quick graphic summary of a sequencing condition
+#' Returns information regarding 
+#' condition are defined in the "NAME" column
+#' @param mydata, data.frame generated with sceToExpressedGenes
+#' @param title, Suffix of the graph name (save)
+#' @param mycols, ggplot scale_color_manual() compatible condition to color (e.g., c("CONDITION_A" = "blue"))
 
 #' summaryPlots
 #' 
@@ -85,20 +93,30 @@ summaryPlots <- function(mydata = mydata, title = NULL, mycols = NULL){
     
     if(broom::tidy(kruskal.test(mydata$count_0, mydata$NAME))$p.value < 0.05){
       mytest <- mydata %>%
-        rstatix::dunn_test(count_0 ~ NAME, p.adjust.method = "bonferroni") %>%
+        rstatix::dunn_test(count_0 ~ NAME, p.adjust.method = "bonferroni")%>%
         rstatix::add_y_position(fun = "max", scales = "free") %>%
-        mutate(p.adj.signif = formatC(p.adj, format = "e", digits = 2))
+        mutate(p.adj.signif = formatC(p, format = "e", digits = 2))
+      
+      y <- min(diff(mytest$y.position))
+      mytest <- mytest %>% 
+        filter(p.adj < 0.05) %>%
+        mutate(y.position = seq(min(y.position), (min(y.position)+y*(n()-1)), y))
     } else {
-      mytest <- data_frame(group1 = "A",
-                           group2 =  "B",
-                           p.value = 1)
+      mytest <- mydata %>%
+        rstatix::dunn_test(count_0 ~ NAME, p.adjust.method = "bonferroni")%>%
+        rstatix::add_y_position(fun = "max", scales = "free") %>%
+        mutate(p.adj.signif = formatC(p, format = "e", digits = 2)) %>%
+        filter(p.adj < 0.05)
+
     }
   } else {
 
       mytest <- mydata %>%
         rstatix::wilcox_test(count_0 ~ NAME) %>%
         rstatix::add_y_position(fun = "max", scales = "free") %>%
-        mutate(p.adj.signif = formatC(p, format = "e", digits = 2))
+        mutate(p.adj.signif = formatC(p, format = "e", digits = 2)) %>%
+        filter(p < 0.05)
+
   }
   
   # 1.2. Display the gene counts
@@ -108,9 +126,9 @@ summaryPlots <- function(mydata = mydata, title = NULL, mycols = NULL){
     geom_boxplot(data = mydata, aes(y = count_0, x = NAME, fill = reorder(NAME, count_0, median)), width=0.1) +
     ggpubr::stat_pvalue_manual(mytest, label = "p = {p.adj.signif}", step.increase = 0.05, tip.length = 0.01, size = 6) +
     scale_fill_manual(values = mycols) +
-    scale_y_continuous(breaks = seq(0,max(mydata$count_0)*1.1,1000)) +
+    scale_y_continuous(breaks = seq(0,max(mydata$count_0)*1.1,1000), labels = as.character(formatC(seq(0,max(mydata$count_0)*1.1,1000), format="d", big.mark=",") )) +
     scale_color_brewer(palette = "Dark2") +
-    ylab("Detected Genes") + 
+    ylab(" Genes Detected") + 
     xlab("") +
     theme_cowplot(font_size = 28) +
     theme(legend.position = "none", 
@@ -668,7 +686,7 @@ p.LA.genes <-
   xlab("Downsampled Reads") +
   ylab("Genes Detected") +
   geom_text(data = p.signif, aes(y = 6000, label = p.adj.signif, x = 175000), size = 4) +
-  scale_y_continuous(breaks = seq(0,5000,1000) ) +
+  scale_y_continuous(breaks = seq(0,5000,1000), labels = c("0", "1,000", "2,000", "3,000", "4,000", "5,000") ) +
   scale_x_continuous(breaks = c(5000, 10000, 20000, 40000, 50000, 75000, 100000, 125000, 250000, 375000, 500000), labels = c("", "", "", "", "50K", "", "100K", "", "250K", "375K", "500K")) +
   scale_color_manual(values = c("FS - 25 µL" = "#E41A1C",
                                 "FS - 5 µL\nMiniaturized" = "#FF850D",
@@ -1249,8 +1267,8 @@ p.LA.genes <- mydata %>%
   theme(legend.title = element_blank(),
         axis.text.x = element_text(size = 14, angle = 45, hjust = 1), panel.grid.major = element_line(color = "white"), panel.grid.minor = element_line(color = "white")) +
   xlab("Downsampled Reads") +
-  ylab("Detected Genes") +
-  scale_y_continuous(breaks = seq(0,6000,1000) ) +
+  ylab("Genes Detected") +
+  scale_y_continuous(breaks = seq(0,6000,1000), labels = c("0", "1,000", "2,000", "3,000", "4,000", "5,000", "6,000") ) +
   scale_x_continuous(breaks = c(5000, 10000, 20000, 40000, 50000, 75000, 100000, 125000, 250000, 375000, 500000), labels = c("", "", "", "", "50K", "", "100K", "", "250K", "375K", "500K")) +
   scale_color_manual(values = c("#FF850D", "#7f3fb2")) + 
   scale_fill_manual(values = c("#FF850D", "#7f3fb2")) + 
