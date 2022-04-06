@@ -137,7 +137,7 @@ p.motifs.pos <- ggplot() +
   scale_x_continuous(breaks = 1:24, limits = c(1,25)) +
   theme(legend.position = "none")
 
-ggsave(p.motifs.pos, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/UMIposition.tiff", width = 10, height = 13, dpi = 450)
+ggsave(p.motifs.pos, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/UMIposition.pdf", width = 10, height = 13, dpi = 450)
 ```
 
 # Gene-body coverage
@@ -189,7 +189,7 @@ p.cover <- ggplot(mycover, aes(x = as.numeric(Percentile), color = TYPE, fill = 
         legend.background = element_blank(),
         legend.justification = c(1, 1), legend.position = c(0.95, 0.95))
   
-ggsave(p.cover, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/UMIinR2.Coverage.tiff"), bg = "white", dpi = 450, height = 6, width = 12)
+ggsave(p.cover, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/UMIinR2.Coverage.pdf"), bg = "white", dpi = 450, height = 6, width = 12)
 ```
 
 
@@ -273,7 +273,7 @@ p.star.ss3 <- ggplot() +
         axis.line.y.right = element_line(color = "black", linetype = "solid", size = 1)) + ggtitle("SS3")
 
 p.star <- plot_grid(p.star, p.star.ss3, rel_widths = c(1,0.5))
-ggsave(p.star, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/UMIinR2.star.stats.tiff", dpi = 450, bg = "white", width = 12, height = 5)
+ggsave(p.star, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/UMIinR2.star.stats.pdf", dpi = 450, bg = "white", width = 12, height = 5)
 ```
 
 # Read Distribution
@@ -366,7 +366,7 @@ p.readDistrib.SS3 <- ggplot() +
           axis.line.y.right = element_line(color = "black", linetype = "solid", size = 1)) 
 
 p.readDistrib.all <- plot_grid(p.readDistrib, p.readDistrib.SS3, rel_widths = c(1,0.5))
-ggsave(p.readDistrib.all, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/UMIinR2.resqc.stats.tiff", dpi = 450, bg = "white", width = 16, height = 5)
+ggsave(p.readDistrib.all, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/UMIinR2.resqc.stats.pdf", dpi = 450, bg = "white", width = 16, height = 5)
 
 ```
 
@@ -441,7 +441,7 @@ p.counts.umi.SS3 <- ggplot() +
   geom_text(aes(x = 1, y = 0, label = "n = 365"), size = 4) 
 
 
-ggsave(p.counts.umi, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/UMIinR2.counts.tiff", dpi = 450, bg = "white", width = 8, height = 5)
+ggsave(p.counts.umi, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/UMIinR2.counts.pdf", dpi = 450, bg = "white", width = 8, height = 5)
 
 ```
 
@@ -494,7 +494,7 @@ p.corrs <- ggplot(mycorrs, aes(x = "", y = tau, fill = "col")) +
   ylab("R1/R2 UMI gene count\ncorrelations (tau)") +
   xlab("")
 
-ggsave(p.corrs, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/UMIinR2.corrs.tiff", dpi = 450, bg = "white", width = 3, height = 5)
+ggsave(p.corrs, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/UMIinR2.corrs.pdf", dpi = 450, bg = "white", width = 3, height = 5)
 
 ```
 
@@ -605,7 +605,7 @@ p.motifs.pos <- ggplot() +
   scale_x_continuous(breaks = 1:24, limits = c(1,25)) +
   theme(legend.position = "none") 
 
-ggsave(p.motifs.pos, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/UMIposition.singleEnd.tiff", width = 12, height = 14, dpi = 300)
+ggsave(p.motifs.pos, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/UMIposition.singleEnd.pdf", width = 12, height = 14, dpi = 300)
 ```
 
 ```{r duplication rate and number of UMI reads, include=FALSE}
@@ -676,7 +676,7 @@ percentageUMI <- plot_grid(nrow = 1,
     theme_cowplot() +
     theme(legend.position = "none") +
     xlab("") + 
-    ylab("Percentage UMI Reads") +
+    ylab("UMI Reads (%)") +
     scale_y_continuous(breaks = seq(0,90,10), limits = c(0,100)) +
     scale_fill_manual(values = c("FS-UMI\nCTAAC\nRetinal Organoids" = "#FF850D", "SS3\nMice Fibroblast\nHagemann-J. et al\nE-MTAB-8735" = "#4DAF4A")) +
     ggtitle("UMI in R1"),
@@ -688,7 +688,7 @@ percentageUMI <- plot_grid(nrow = 1,
     scale_y_continuous(breaks = seq(0,90,10), limits = c(0,100)) +
     geom_boxplot(width = 0.1) + 
     xlab("") + 
-    ylab("Percentage UMI Reads") +
+    ylab("UMI Reads (%)") +
     ggtitle("UMI in R2") +
     scale_fill_manual(values = c("FS-UMI\nCTAAC\nRetinal Organoids" = "#FF850D", "SS3\nMice Fibroblast\nHagemann-J. et al\nE-MTAB-8735" = "#4DAF4A")),
   ggplot(stats.aggregated, aes(x = GROUP, y = cumultated, fill = GROUP)) + 
@@ -699,12 +699,12 @@ percentageUMI <- plot_grid(nrow = 1,
     scale_y_continuous(breaks = seq(0,90,10), limits = c(0,100)) +
     geom_boxplot(width = 0.1) + 
     xlab("") + 
-    ylab("Percentage UMI Reads") +
+    ylab("UMI Reads (%)") +
     ggtitle("Cumulated R1/R2") +
     scale_fill_manual(values = c("FS-UMI\nCTAAC\nRetinal Organoids" = "#FF850D", "SS3\nMice Fibroblast\nHagemann-J. et al\nE-MTAB-8735" = "#4DAF4A"))
 )
 
-ggsave(percentageUMI, filename="/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/ORGANOIDS_percentageUMI.tiff", bg = "white", dpi = 450, width = 12, height = 5)
+ggsave(percentageUMI, filename="/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/ORGANOIDS_percentageUMI.pdf", bg = "white", dpi = 450, width = 12, height = 5)
 
 # 4.2. Duplication
 dups <- stats.aggregated %>%
@@ -735,5 +735,5 @@ p.dups <- ggplot() +
   geom_text(data = p.sign, aes(x = (x+xend)/2, y = y+0.35, label = p.signif), size = 6) 
 
     
-ggsave(p.dups, filename="/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/ORGANOIDS_percentageDups.tiff", bg = "white", dpi = 450, width = 6, height = 5)
+ggsave(p.dups, filename="/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/ORGANOIDS_percentageDups.pdf", bg = "white", dpi = 450, width = 6, height = 5)
 ```

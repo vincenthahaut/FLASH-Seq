@@ -426,12 +426,18 @@ ggsave(p.topheat, dpi = 450, width = 12, height = 10, bg = "white",
 
 ```{r export data, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
 
-ssce <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS_10x.processed.rds")
+ssce.doublets <- read_rds(paste0(OUTPUT, "seurat.doublets.tmp.rds"))
+sce <- read_rds(paste0(OUTPUT, "seurat.raw.tmp.rds"))
+sample.id <- "ORGANOIDS_W18"
+
+# 1. Remove Low quality Cells & Doublets
+index <- colnames(ssce.doublets[[1]][,ssce.doublets[[1]]$Doublets == "Singlet"])
+sce.filtered <- sce$ORGANOIDS_W18[,colnames(sce$ORGANOIDS_W18) %in% index]
 data.table <- as.matrix(GetAssayData(ssce, slot = "data"))
 meta.data <- ssce@meta.data[c("orig.ident", "cell_type", "nCount_RNA", "percent.mito")]
 
-write.table(data.table, "/home/vincent.hahaut/data_storage/transfer/10x_w18organoids_soupxCounts.txt", sep = "\t", col.names = NA, row.names = T, quote = F)
-write.table(meta.data, "/home/vincent.hahaut/data_storage/transfer/10x_w18organoids_metadata.txt", sep = "\t", col.names = T, quote = F)
+write.table(data.table, "/home/vincent.hahaut/data_storage/transfer/Mendeley/Retinal Organoids/10x_w18organoids_soupxCounts.txt", sep = "\t", col.names = NA, row.names = T, quote = F)
+write.table(meta.data, "/home/vincent.hahaut/data_storage/transfer/Mendeley/Retinal Organoids/10x_w18organoids_metadata.txt", sep = "\t", col.names = T, row.names = F, quote = F)
 
 ```
 

@@ -1,4 +1,6 @@
 library(gggenes)  # Arrow charts are not well covered by ggplot but worked well with this one.
+library(tidyverse)
+library(cowplot)
 
 timing <- read_tsv("/home/vincent.hahaut/Desktop/FLASH-Seq/R/timing_graph/FS_timing.txt")
 
@@ -105,6 +107,6 @@ if(LOWAMP == FALSE){
   ggsave(pA + 
            scale_y_discrete(labels=rev(c("SSsc", "SS2", "SS3", "FS", "FS-LA"))) + 
            guides(colour = guide_legend(override.aes = list(size=12, stroke = 2), title = "Start")), 
-         filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/timing_FSonly.ALL.tiff", dpi = 450, width = 12, height = 4.5, bg = "white")
+         filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/timing_FSonly.ALL.pdf", dpi = 450, width = 12, height = 4.5, bg = "white")
   
 }

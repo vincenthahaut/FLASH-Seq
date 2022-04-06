@@ -304,10 +304,10 @@ p.depth <- plot_grid(nrow = 2,
     xlab("Downsampled Reads") + ylab("Variants") + ggtitle("False Positive")
 )
 
-ggsave(p.depth, bg = "white", filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_VARIANTS_DEPTH.tiff", dpi = 450, height = 8, width = 7)
-ggsave(p.variants, bg = "white", filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_VARIANTS.tiff", dpi = 450, height = 8, width = 12)
+ggsave(p.depth, bg = "white", filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_VARIANTS_DEPTH.pdf", dpi = 450, height = 8, width = 7)
+ggsave(p.variants, bg = "white", filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_VARIANTS.pdf", dpi = 450, height = 8, width = 12)
 
-ggsave(p.variants, bg = "white", filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_VARIANTS.tiff", dpi = 450, width = 20, height = 4)
+ggsave(p.variants, bg = "white", filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_VARIANTS.pdf", dpi = 450, width = 20, height = 4)
 
 # True positives / False positives relationship
 tp_fp <- vcf.dp %>% 
@@ -335,7 +335,7 @@ corrs <- ggplot() +
   guides(color = guide_legend(override.aes = list(size = 3)))
 
 
-ggsave(corrs, bg = "white", filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_VARIANTS_corrs.tiff", dpi = 450, height = 6, width = 8)
+ggsave(corrs, bg = "white", filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_VARIANTS_corrs.pdf", dpi = 450, height = 6, width = 8)
 
 
 ####### 10x Variant Calling ############
@@ -465,4 +465,4 @@ results %>%
   group_by(nCells) %>%
   summarise(mean(nReads), sd(nReads))
 
-ggsave(p.variants.10x, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/10x_variant_calling.tiff", dpi = 450, height = 6, width = 10, bg = "white")
+ggsave(p.variants.10x, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/10x_variant_calling.pdf", dpi = 450, height = 6, width = 10, bg = "white")

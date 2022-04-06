@@ -200,7 +200,7 @@ summaryPlots <- function(mydata = mydata, title = NULL, mycols = NULL){
                      nrow = 1, labels = c("a", "b"), label_size = 28, rel_widths = c(0.32, 0.67)), 
            p.resqc, nrow = 2, label_size = 28, labels = c("", "c")) + theme(panel.background = element_rect(color = "white"),
                                                                             plot.background = element_rect(color = "white")), 
-         filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/", title, ".tiff"),
+         filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/", title, ".pdf"),
          dpi = 450, width = 32, height = 20)
   
   return(list(p.gene, p.star,p.resqc))
@@ -264,6 +264,20 @@ mydata <- med.exon %>%
   filter(!is.na(NAME), as.numeric(DEPTH) < 1000000, as.numeric(P_too_short_read) < 25)
 write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
 
+# Min diff visible
+
+FS <- filter(mydata, DEPTH == 250000, NAME == "FS - 5 µL (Miniaturized)")
+p <- vector()
+diff.count <- .96
+for(i in 1:100){
+  FS.tmp <- sample_n(FS, 16)
+  df <- data.frame(
+    count_0 = c(FS.tmp$count_0, as.numeric(rnorm(mean = 10118.28*diff.count, sd = 636.6911*diff.count, n = 16))),
+    GROUP = c(rep("data", 16), rep("simulated", 16)))
+  p <- c(p, rstatix::wilcox_test(df, count_0 ~ GROUP)$p)
+}
+           
+
 # 2. Gene Counts
 
 # 2.1. Statistical comparison between groups
@@ -317,7 +331,7 @@ p1.500K <- ggplot() +
 
 # 2.3. Save results
 ggsave(p1.500K, 
-       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_exonCounts.tiff", bg = "white", dpi = 450, width = 7, height = 6)
+       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_exonCounts.pdf", bg = "white", dpi = 450, width = 7, height = 6)
 
 # 3. General Statistics
 summaryPlots(filter(mydata, DEPTH == 500000), title = "HEK_96w_SUMMARY", mycols = c("FS - 25 µL" = "#E41A1C",
@@ -338,7 +352,6 @@ p.intron.hek <- right_join(resqc, select(mydata %>% filter(DEPTH == "500000"), I
          NAME = factor(as.factor(NAME), levels = c("FS - 25 µL", "F", "SS2", "SS3")),
          key = factor(as.factor(key), levels = c("TES_down_10kb", "TSS_up_10kb", "UTR3_Exons", "UTR5_Exons", "Intergenic", "Introns", "CDS_Exons"))) %>%
   # Only display the CDS Exon / intron information
-  filter(key %in% c("CDS_Exons", "Introns")) %>%
   ggplot(aes(x = NAME, y = perc, fill = NAME)) +
   geom_violin() +
   geom_boxplot(width =  0.1) +
@@ -346,7 +359,7 @@ p.intron.hek <- right_join(resqc, select(mydata %>% filter(DEPTH == "500000"), I
                                "SS2" = "#377EB8",
                                "SS3" = "#4DAF4A",
                                "F" = "#FF850D")) +
-  theme_cowplot(font_size = 24) +
+  theme_cowplot(font_size = 28) +
   scale_y_continuous(breaks = seq(0,65,10)) +
   facet_wrap("key", scales = "free_x", nrow = 1) +
   theme(legend.position = "none",
@@ -358,7 +371,7 @@ p.intron.hek <- right_join(resqc, select(mydata %>% filter(DEPTH == "500000"), I
   ylab("Read Tags (%)") 
 
 ggsave(p.intron.hek, 
-       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_introns.tiff", bg = "white", dpi = 450, height = 6, width = 10)
+       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_introns.pdf", bg = "white", dpi = 450, height = 5, width = 10)
 
 # 5. Gene counts - downsampling
 
@@ -400,7 +413,7 @@ p2 <- mydata.down %>%
         legend.text = element_text(size = 14)) 
 
 ggsave(p2, 
-       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_exonCounts.downsampling.tiff", bg = "white", dpi = 450, width = 10, height = 6)
+       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_exonCounts.downsampling.pdf", bg = "white", dpi = 450, width = 10, height = 6)
 
 
 # 6. Gene diversity 
@@ -626,7 +639,7 @@ overlaps.grouped <- overlaps.res %>%
   mutate(lab = paste0(floor(m), "±", floor(sd)))
 
 ## 7.2. Manually create the Venn diagramm based on these results
-tiff("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/vennDiagram.tiff", width = 800, height = 800, bg = "white", res = 300)
+tiff("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/vennDiagram.pdf", width = 800, height = 800, bg = "white", res = 300)
 VennDiagram::draw.quad.venn(
   area1 = 0,
   area2 = 0, 
@@ -686,7 +699,7 @@ p.diversity <- ggplot() +
                                "FS - 5 µL" = "#FF850D",
                                "SS3" = "#4DAF4A",
                                "SSsc" = "#984EA3")) 
-ggsave(p.diversity, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_diversity.tiff", width = 6, height = 6, dpi= 450, bg = "white")
+ggsave(p.diversity, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_diversity.pdf", width = 6, height = 6, dpi= 450, bg = "white")
 
 # 9. Gene types
 
@@ -698,12 +711,12 @@ test <- genecontent.res %>%
   filter(TYPE == "ALL", DEPTH == 500000,
          gene_type %in% c("lncRNA","protein_coding", "processed_pseudogene", "transcribed_unprocessed_pseudogene", "TEC", "unprocessed_pseudogene")) %>%
   mutate(gene_type = case_when(gene_type == "TEC" ~ "To be\nExperimentally\nConfirmed",
-                               gene_type == "unprocessed_pseudogene" ~ "Unprocessed\nPseudogene",
+                               gene_type == "unprocessed_pseudogene" ~ "Unprocessed\nPseudogenes",
                                gene_type == "lncRNA"  ~ "lncRNA",
                                gene_type == "protein_coding" ~ "Protein Coding",
-                               gene_type == "processed_pseudogene" ~ "Processed\nPseudogene",
-                               gene_type == "transcribed_unprocessed_pseudogene" ~ "Transcribed\nUnprocessed\nPseudogene"),
-         gene_type = factor(gene_type, levels = c("Protein Coding", "lncRNA", "Processed\nPseudogene", "Transcribed\nUnprocessed\nPseudogene", "To be\nExperimentally\nConfirmed", "Unprocessed\nPseudogene")))
+                               gene_type == "processed_pseudogene" ~ "Processed\nPseudogenes",
+                               gene_type == "transcribed_unprocessed_pseudogene" ~ "Transcribed\nUnprocessed\nPseudogenes"),
+         gene_type = factor(gene_type, levels = c("Protein Coding", "lncRNA", "Processed\nPseudogenes", "Transcribed\nUnprocessed\nPseudogenes", "To be\nExperimentally\nConfirmed", "Unprocessed\nPseudogenes")))
 
 # 9.2. Statstical significance
 # Add the info required to display these results
@@ -731,12 +744,12 @@ p.gene.content <- ggplot() +
                                "FS - 5 µL (Miniaturized)" = "#FF850D",
                                "SS3" = "#4DAF4A",
                                "SSsc" = "#984EA3")) + 
-  scale_y_continuous(label = comma) +
+  scale_y_continuous(label = scales::comma) +
   ylab("Genes Detected") +
   ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}",  tip.length = 0.01, size = 4) +
   facet_wrap("gene_type", ncol = 2, scales = "free") 
 
-ggsave(p.gene.content, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_geneContent.tiff"), dpi = 450, height = 16, width = 12)
+ggsave(p.gene.content, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_geneContent.pdf"), dpi = 450, height = 16, width = 12)
 
 
 
@@ -770,14 +783,14 @@ p.cover <- ggplot(mycover, aes(x = as.numeric(Percentile), color = as.factor(NAM
                                 "SS2" = "#377EB8")) + 
   scale_fill_manual(values = c("FS - 25 µL" = adjustcolor("#E41A1C", alpha = 0.25),
                                "SS2" = adjustcolor("#377EB8", alpha = 0.25))) +
-  ylab("Percentage Coverage") +
+  ylab("Coverage (%)") +
   xlab("Gene Body Percentile (5'->3')") +
   theme(legend.title = element_blank(),
         axis.text = element_text(size = 22),
         axis.title = element_text(size = 24),
         legend.position = "none")
 
-ggsave(p.cover, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_geneBodyCoverage.tiff"), bg = "white", dpi = 450, height = 6, width = 8)
+ggsave(p.cover, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_geneBodyCoverage.pdf"), bg = "white", dpi = 450, height = 6, width = 8)
 
 
 # 12. Gene diversity - GC content / length
@@ -841,13 +854,13 @@ p.Length <- ggplot() +
   theme(legend.position = "none") +
   ylab("Average Gene Length (bp)") +
   xlab("") +
-  scale_y_continuous(breaks = seq(2500,4500,500), label = comma) +
+  scale_y_continuous(breaks = seq(2500,4500,500), label = scales::comma) +
   theme_cowplot(font_size = 24) +
   theme(legend.position = "none") + 
   ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}",  tip.length = 0.01, size = 4) 
 
 
-ggsave(plot_grid(align = "v", p.GC + theme(legend.position = "none"), p.Length  + theme(legend.position = "none"), ncol = 2), filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_DE_explore.tiff", dpi = 450, height = 6, width = 12, bg = "white")
+ggsave(plot_grid(align = "v", p.GC + theme(legend.position = "none"), p.Length  + theme(legend.position = "none"), ncol = 2), filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_DE_explore.pdf", dpi = 450, height = 6, width = 12, bg = "white")
 
 # 13. Which gene types are gained with increasing sequencing depth ? 
 
@@ -880,7 +893,7 @@ p.genetype.gained <- genecontent.res %>%
   xlab("Downsampled Reads") +
   ylab("Average Detected Genes") +
   facet_wrap("GROUP", nrow = 1)
-ggsave(p.genetype.gained + theme(legend.position = "none"), filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_miniaturized_gainedgene.tiff", dpi = 300, height = 5, width = 12, bg = "white")
+ggsave(p.genetype.gained + theme(legend.position = "none"), filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_miniaturized_gainedgene.pdf", dpi = 300, height = 5, width = 12, bg = "white")
 
 # 14. HEK isoforms (salmon)
 # 500K
@@ -927,7 +940,7 @@ p.isoform.HEK <- ggplot() +
                                "SS2" = "#377EB8",
                                "FS - 5 µL" = "#FF850D",
                                "SS3" = "#4DAF4A"))
-ggsave(p.isoform.HEK, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_isoforms.tiff", dpi = 450, width = 10, height = 8, bg = "white")
+ggsave(p.isoform.HEK, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_isoforms.pdf", dpi = 450, width = 10, height = 8, bg = "white")
 
 # 15. Gained genes against reference depth
 
@@ -979,9 +992,9 @@ saturation <- mydata %>%
         axis.title = element_text(size = 24),
         legend.text = element_text(size = 14)) 
 
-ggsave(saturation, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_saturation.tiff", dpi = 450, height = 6, width = 16, bg = "white")
+ggsave(saturation, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_saturation.pdf", dpi = 450, height = 6, width = 16, bg = "white")
 
-ggsave(plot_grid(p2, saturation, nrow = 2), filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_saturation_downsampling.tiff", dpi = 500, height = 10, width = 11, bg = "white")
+ggsave(plot_grid(p2, saturation, nrow = 2), filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_saturation_downsampling.pdf", dpi = 500, height = 10, width = 11, bg = "white")
 
 ```
 
@@ -1027,7 +1040,7 @@ p1.500K <- ggplot() +
 
 # 2.3. Save results
 ggsave(p1.500K, 
-       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_exonCounts_mini.tiff", bg = "white", dpi = 450, width = 7, height = 6)
+       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_exonCounts_mini.pdf", bg = "white", dpi = 450, width = 7, height = 6)
 ```
 
 ## cDNA yields
@@ -1067,7 +1080,7 @@ pA <- ggplot() +
   geom_text(aes(x = 2, label="n = 90"),  y = 0, stat='count', size=5) +
   geom_text(aes(x = 3, label="n = 94"),  y = 0, stat='count', size=5) 
 
-ggsave(pA, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_cDNA_yield.tiff", bg = "white", dpi = 450, height = 8, width = 6)
+ggsave(pA, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_cDNA_yield.pdf", bg = "white", dpi = 450, height = 8, width = 6)
 
 ```
 
@@ -1143,22 +1156,24 @@ p.signif <- corrs %>%
 
 # 7. Visualize results
 p6 <- corrs %>%
+  mutate(GROUP = ifelse(GROUP == "FS", "FS - 25µL", GROUP)) %>%
   ggplot(aes(x = reorder(GROUP, tau, median), y = tau)) + 
   geom_hline(yintercept = seq(0.40, 0.75, 0.05), linetype = "dotted", color = "darkgrey") +
   geom_violin(aes(fill = GROUP)) +
   geom_boxplot(aes(fill = GROUP), width = 0.1) +
-  theme_cowplot(font_size = 28) +
-  methodPalette() +
-  theme(legend.position = "none",
-        axis.text = element_text(size = 22), 
-        axis.title = element_text(size = 24)) +
+  theme_cowplot(font_size = 18) +
+  scale_fill_manual(values = c("FS - 25µL" = "#E41A1C",
+                                                         "SS2" = "#377EB8",
+                                                         "SS3" = "#4DAF4A",
+                                                         "SSsc" = "#984EA3")) +
+  theme(legend.position = "none") +
   xlab("") +
   ylab("Cell-to-Cell Correlation (tau)") +
   ggpubr::stat_pvalue_manual(p.signif, label = "{p.adj.signif}",  tip.length = 0.01, size = 4)
 
 
 ggsave(p6, 
-       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_kendallCorr.tiff", bg = "white", dpi = 450, width = 5, height = 6)
+       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_kendallCorr.pdf", bg = "white", dpi = 450, width = 5, height = 6)
 ```
 
 # Miniaturize SS3 / SSsc 
@@ -1203,7 +1218,7 @@ p1.ss3 <- ggplot(mydata %>% filter(METHOD == "SS3"), aes(y = count_0, x = NAME, 
         axis.line.y.right = element_line(color = "black", linetype = "solid", size = 1)) 
 
 ggsave(p1.ss3, 
-       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/PBMC_reactionVolume_SS3.tiff", dpi = 300, width = 6, height = 8, bg = "white")
+       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/PBMC_reactionVolume_SS3.pdf", dpi = 300, width = 6, height = 8, bg = "white")
 
 # 3. Visualize Takara
 p1.sscr <- ggplot(mydata %>% filter(METHOD == "SSsc"), aes(y = count_0, x = NAME, fill = NAME)) +
@@ -1231,7 +1246,7 @@ p1.sscr <- ggplot(mydata %>% filter(METHOD == "SSsc"), aes(y = count_0, x = NAME
         axis.line.y.right = element_line(color = "black", linetype = "solid", size = 1)) 
 
 ggsave(p1.sscr, 
-       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/PBMC_reactionVolume_SSsc.tiff", dpi = 300, width = 6, height = 8, bg = "white")
+       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/PBMC_reactionVolume_SSsc.pdf", dpi = 300, width = 6, height = 8, bg = "white")
 
 ```
 
@@ -1317,7 +1332,7 @@ p1 <- ggplot() +
   ggpubr::stat_pvalue_manual(filter(du, threshold == "count > 5"), label = "{p.adj.signif}",  step.increase = 0.05, tip.length = 0.01, size = 3) 
 
 ggsave(p1, 
-       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_lowAmplificationCycles.reviewer.tiff", bg = "white", dpi = 450, width = 12, height = 6)
+       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_lowAmplificationCycles.reviewer.pdf", bg = "white", dpi = 450, width = 12, height = 6)
 
 # 3. Gene-body Coverage
 
@@ -1358,7 +1373,7 @@ p.cover <- ggplot(mycover, aes(x = as.numeric(Percentile), color = as.factor(NAM
   theme(strip.background = element_blank(),
         strip.text = element_text(face = "bold"))
 
-ggsave(p.cover, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_LOWAMP_COVERAGE.tiff"), dpi = 450, height = 8, bg = "white", width = 12)
+ggsave(p.cover, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_LOWAMP_COVERAGE.pdf"), dpi = 450, height = 8, bg = "white", width = 12)
 
 
 # 4. Gene Distribution (read tags)
@@ -1399,7 +1414,7 @@ p2 <- filter(resqc, ID %in% mydata$ID) %>%
   xlab("Read Tags (%)") 
 
 ggsave(p2, bg = "white",
-       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_lowAmplificationCycles_RESQC.tiff", dpi = 450, width = 12, height = 6)
+       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_lowAmplificationCycles_RESQC.pdf", dpi = 450, width = 12, height = 6)
 
 # 4.2. Lines / Dots per PCR cycles
 resqc.tmp <- filter(resqc, ID %in% mydata$ID) %>%
@@ -1441,7 +1456,7 @@ p2 <-     ggplot(data = resqc.tmp, aes(x = GROUP, y = perc, fill = key)) +
 
 
 ggsave(p2, 
-       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_lowAmplificationCycles8CYCLES_RESQC.tiff", dpi = 450, bg = "white", width = 8, height = 6)
+       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_lowAmplificationCycles8CYCLES_RESQC.pdf", dpi = 450, bg = "white", width = 8, height = 6)
 
 
 # 5. STAR Mapping  Statistics
@@ -1478,10 +1493,10 @@ p3 <- mydata %>%
 
 
 ggsave(p3, 
-       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_lowAmplificationCycles_STAR.tiff", bg = "white", dpi = 450, width =  8, height = 6)
+       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_lowAmplificationCycles_STAR.pdf", bg = "white", dpi = 450, width =  8, height = 6)
 
 ggsave(plot_grid(p2, p3, nrow = 2), bg = "white",
-       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_lowAmplificationCycles_STAR_COMBINED.tiff", dpi = 450, width = 8, height = 10)
+       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_lowAmplificationCycles_STAR_COMBINED.pdf", dpi = 450, width = 8, height = 10)
 
 # 6. Gene type content
 
@@ -1540,7 +1555,7 @@ p.LA.content <- counts(mysce) %>%
 
 
 ggsave(p.LA.content, bg = "white",
-       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_LA_content.tiff", dpi = 300, width = 8, height = 6)
+       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_LA_content.pdf", dpi = 300, width = 8, height = 6)
 
 # 7. Impact of Tn5 on the results
 
@@ -1683,7 +1698,7 @@ for(cycle in c(4,6,8,10,12)){
   myplots[[cycle]] <- plot_grid(p.gene, p.resqc, p.star, nrow = 1, rel_widths = c(0.18, 0.44, 0.38))
   
   ggsave(plot_grid(p.gene, p.resqc, p.star, nrow = 1, labels = "AUTO", rel_widths = c(0.18, 0.44, 0.38)), bg = "white",
-         filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_cycles_", cycle, ".tiff"),
+         filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_cycles_", cycle, ".pdf"),
          dpi = 450, width = 30, height = 6)
   
 }
@@ -1693,7 +1708,7 @@ ggsave(plot_grid(myplots[[4]],
                  myplots[[8]],
                  myplots[[10]],
                  myplots[[12]], nrow = 5, labels = "auto", label_size = 30), bg = "white", 
-       filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_cycles_ALLCYCLES_ALLTN5.tiff"),
+       filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_cycles_ALLCYCLES_ALLTN5.pdf"),
        dpi = 380, width = 36, height = 32)
 
 ```
@@ -1795,5 +1810,5 @@ p6 <- corrs %>%
     ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}",  step.increase = 0.025, tip.length = 0.01, size = 4) 
 
 ggsave(p6, 
-       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_LA_kendallCorr.tiff", bg = "white", dpi = 450, width = 6, height = 8)
+       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_LA_kendallCorr.pdf", bg = "white", dpi = 450, width = 6, height = 8)
 ```

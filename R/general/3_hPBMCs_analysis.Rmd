@@ -38,7 +38,7 @@ methodPalette <- function(){scale_fill_manual(values = c("FS" = "#E41A1C",
 
 ```
 
-```{r local functions, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
+```{r local functions, echo=FALSE, message=FALSE, warning=FALSE, cache=FALSE, comment=FALSE, include=TRUE}
 
 #' processExpressGenes
 #' 
@@ -211,7 +211,7 @@ summaryPlots <- function(mydata = mydata, title = NULL, mycols = NULL){
                      nrow = 1, labels = c("a", "b"), label_size = 28, rel_widths = c(0.32, 0.67)), 
            p.resqc, nrow = 2, label_size = 28, labels = c("", "c")) + theme(panel.background = element_rect(color = "white"),
                                                                             plot.background = element_rect(color = "white")), 
-         filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/", title, ".tiff"),
+         filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/", title, ".pdf"),
          dpi = 450, width = 32, height = 20)
   
   return(list(p.gene, p.star,p.resqc))
@@ -312,7 +312,7 @@ p1.pbmc <- mydata %>%
         legend.text = element_text(size = 14)) 
 
 ggsave(p1.pbmc, bg = "white",
-       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/PBMC_96w_exonCounts.tiff", dpi = 450, width = 10, height = 8)
+       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/PBMC_96w_exonCounts.pdf", dpi = 450, width = 10, height = 8)
 
 # 3. Intronics / exonic read tags in hPBMCs
 p.intron.pbmc <- right_join(resqc, select(mydata %>% filter(DEPTH == 125000), ID, NAME)) %>%
@@ -336,7 +336,7 @@ p.intron.pbmc <- right_join(resqc, select(mydata %>% filter(DEPTH == 125000), ID
                                "SS2" = "#377EB8",
                                "SS3" = "#4DAF4A",
                                "SSsc" = "#984EA3")) +
-  theme_cowplot(font_size = 24) +
+  theme_cowplot(font_size = 22) +
   scale_y_continuous(breaks = seq(0,65,10)) +
   facet_wrap("key", scales = "free_x", nrow = 1) +
   theme(legend.position = "none", 
@@ -347,11 +347,11 @@ p.intron.pbmc <- right_join(resqc, select(mydata %>% filter(DEPTH == 125000), ID
   xlab("") +
   ylab("Read Tags (%)") 
 
-ggsave(p.intron.pbmc, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/intronics_reads_methods.tiff", bg = "white", dpi = 450, width = 10, height = 5)
+ggsave(p.intron.pbmc, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/intronics_reads_methods.pdf", bg = "white", dpi = 450, width = 10, height = 5)
 
 # ggsave(plot_grid(
 #  p.intron.hek, p.intron.pbmc, nrow = 2), 
-#  filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/intronics_reads_ALL.tiff", 
+#  filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/intronics_reads_ALL.pdf", 
 # bg = "white", dpi = 300, width = 14, height = 9)
 ```
 
@@ -537,11 +537,11 @@ ggsave(plot_grid(
     theme_void() +
     theme(plot.title = element_blank(), legend.position = "none") + 
     scale_color_manual(values = predicted.l2.colors)),
-bg = "white", filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/DimPlot_PBMC_FS.predicted.tiff", dpi = 450, width = 16, height = 6)
+bg = "white", filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/DimPlot_PBMC_FS.predicted.pdf", dpi = 450, width = 16, height = 6)
 
-ggsave(DimPlot.FS, bg = "white", filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/DimPlot_PBMC_FS.tiff", dpi = 450, width = 10, height = 6)
+ggsave(DimPlot.FS, bg = "white", filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/DimPlot_PBMC_FS.pdf", dpi = 450, width = 10, height = 6)
 
-ggsave(DimPlot(ssce.only, group.by = "predicted.celltype.l2", cols = mycolors) +  scale_color_manual(values = predicted.l2.colors) , bg = "white", filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/DimPlot_PBMC_FS.legend.tiff", dpi = 300, width = 10, height = 10)
+ggsave(DimPlot(ssce.only, group.by = "predicted.celltype.l2", cols = mycolors) +  scale_color_manual(values = predicted.l2.colors) , bg = "white", filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/DimPlot_PBMC_FS.legend.pdf", dpi = 300, width = 10, height = 10)
 
 # 5. Check up:
 B_intermediate = c("MS4A1","TNFRSF13B","IGHM","IGHD","AIM2","CD79A","LINC01857","RALGPS2","BANK1","CD79B", "CD3D")
@@ -664,7 +664,7 @@ p.signif <- filter(mydata, NAME %in% c("FS - 5 µL\nMiniaturized", "SS3"), DEPTH
 # Median / SD
 mydata.tmp <- mydata %>%
   group_by(NAME, predicted.celltype.l2, DEPTH) %>%
-  summarise(m = median(count_0), sd = sd(count_0)) %>%
+  summarise(m = mean(count_0), sd = sd(count_0)) %>%
   ungroup() %>%
   filter(predicted.celltype.l2 %in% c("B naive","CD14 Mono","CD16 Mono","CD4 Naive","CD4 TCM","CD8 Naive","CD8 TEM","cDC2","pDC","NK","gdT","MAIT")) %>%
   left_join(p.signif %>% select(predicted.celltype.l2, p.adj.signif), by = "predicted.celltype.l2") %>%
@@ -701,7 +701,7 @@ p.LA.genes <-
                                "SSsc" = "#984EA3"))
 
 
-ggsave(p.LA.genes, bg = "white", width = 20, height = 9, filename =  "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/FS_PBMC_exon_downsampling.tiff", dpi = 450)
+ggsave(p.LA.genes, bg = "white", width = 20, height = 9, filename =  "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/FS_PBMC_exon_downsampling.pdf", dpi = 450)
 
 # 6. Number of cell per cell type
 p.ncells <- mydata %>% 
@@ -722,7 +722,7 @@ p.ncells <- mydata %>%
   xlab("") + ylab("Percentage of Cells") +
   geom_text(aes(label = n),
             position = position_stack(vjust = .5), color = "white")
-ggsave(p.ncells, bg = "white", width = 4, height = 8, filename =  "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/FS_PBMC_nCells.tiff", dpi = 450)
+ggsave(p.ncells, bg = "white", width = 4, height = 8, filename =  "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/FS_PBMC_nCells.pdf", dpi = 450)
 ```
 
 
@@ -740,7 +740,7 @@ mydata <- med.exon %>%
          DEPTH == 125000) %>%
   mutate(NAME = factor(as.factor(NAME), levels = c("FS-LA-16c", "FS-21c")),
          sce.ids = str_replace_all(paste0("X", ID, "_125000_1"), "-", ".")) %>%
-  filter(as.numeric(P_uniquely_mapped_reads) > 50, as.numeric(P_too_short_read) < 25)
+  filter(as.numeric(P_uniquely_mapped_reads) > 60, as.numeric(P_too_short_read) < 20)
 write.table(mydata$ID, "/home/vincent.hahaut/Desktop/IDs.txt", col.names = F, row.names = F, quote = F, append = TRUE)
 
 # Select data
@@ -856,7 +856,7 @@ plot_grid(Seurat::DimPlot(ssce.la, group.by = "predicted.celltype.l2", label = T
 
 # markers <- FindAllMarkers(ssce.la, logfc.threshold = 0.75, min.pct = 0.2, test.use = "MAST")
 
-ggsave(filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/DimPlot_FS_LA.tiff", 
+ggsave(filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/DimPlot_FS_LA.pdf", 
        plot_grid(rel_widths = c(0.4,0.4, 0.2),
   Seurat::DimPlot(ssce.la, group.by = "predicted.celltype.l2", pt.size = 1.25, cols = mycolors) + 
     scale_color_manual(values = predicted.l2.colors) +
@@ -865,7 +865,7 @@ ggsave(filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURE
     theme_void() + theme(legend.position = "none"),
   nrow = 1), dpi = 450, width = 12, height = 6, bg = "white")
 
-ggsave(filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/DimPlot_FS_LA.predicted.tiff", bg = "white",  width = 8, height = 8,dpi = 450, 
+ggsave(filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/DimPlot_FS_LA.predicted.pdf", bg = "white",  width = 8, height = 8,dpi = 450, 
   Seurat::DimPlot(ssce.la, group.by = "predicted.celltype.l2", pt.size = 1.25, cols = mycolors) + 
     scale_color_manual(values = predicted.l2.colors) +
     theme(legend.position = "none"))
@@ -929,9 +929,9 @@ p.heat.otherT <- makeHeatmap(mysce = ssce.la, cell_type = c("MAIT", "gdT"), size
 p.heat.all <- makeHeatmap(mysce = ssce.la, cell_type = 
                                c("B_intermediate", "B_memory", "B_naive","CD4_Naive", "CD4_Proliferating", "CD4_TCM", "CD4_TEM", "Treg","MAIT", "gdT","CD8_Naive", "CD8_Proliferating", "CD8_TCM", "CD8_TEM","CD14_Mono", "CD16_Mono","NK","cDC2", "pDC"))
 
-ggsave(p.heat.all, bg = "white", width = 18, height = 16, filename =  "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/FS_LA_heatmap_all.tiff", dpi = 600)
+ggsave(p.heat.all, bg = "white", width = 18, height = 16, filename =  "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/FS_LA_heatmap_all.pdf", dpi = 600)
 ggsave(plot_grid(p.heat.B, p.heat.CD4, p.heat.CD8, p.heat.DC, 
-                 p.heat.mono, p.heat.nk, p.heat.otherT, ncol = 2), bg = "white", width = 12, height = 18, filename =  "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/FS_LA_heatmap_sep.tiff", dpi = 300)
+                 p.heat.mono, p.heat.nk, p.heat.otherT, ncol = 2), bg = "white", width = 12, height = 18, filename =  "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/FS_LA_heatmap_sep.pdf", dpi = 300)
 
 # Label statibility
 
@@ -1008,7 +1008,7 @@ p.label.stability <- bind_rows(pred.5k, pred.10k, pred.20k, pred.40k, pred.50k, 
   ylab("Cell (%)") + 
   facet_wrap("GROUP")
 
-ggsave(p.label.stability, bg = "white", width = 8, height = 6, filename =  "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/FS_LA_label.statiblity.tiff", dpi = 450)
+ggsave(p.label.stability, bg = "white", width = 8, height = 6, filename =  "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/FS_LA_label.statiblity.pdf", dpi = 450)
 ```
 
 ```{r Low Amplification, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
@@ -1063,14 +1063,14 @@ p.cover <- ggplot(mycover, aes(x = as.numeric(Percentile), color = as.factor(NAM
   theme(strip.background = element_blank(),
         strip.text = element_text(face = "bold"))
 
-ggsave(p.cover, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/PBMC_LOWAMP_geneBodyCoverage.tiff"), dpi = 450, height = 6, width = 8, bg = "white")
-ggsave(p.sumL[[2]], filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/PBMC_LOWAMP_STAR.tiff"), dpi = 450, height = 6, width = 16, bg = "white")
-ggsave(p.sumL[[3]], filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/PBMC_LOWAMP_RESQC.tiff"), dpi = 450, width = 24, height = 6, bg = "white")
+ggsave(p.cover, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/PBMC_LOWAMP_geneBodyCoverage.pdf"), dpi = 450, height = 6, width = 8, bg = "white")
+ggsave(p.sumL[[2]], filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/PBMC_LOWAMP_STAR.pdf"), dpi = 450, height = 6, width = 16, bg = "white")
+ggsave(p.sumL[[3]], filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/PBMC_LOWAMP_RESQC.pdf"), dpi = 450, width = 24, height = 6, bg = "white")
 
-ggsave(p.sumL[[1]], filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/PBMC_LOWAMP_genes.tiff"), dpi = 450, bg = "white", height = 6, width = 8)
+ggsave(p.sumL[[1]], filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/PBMC_LOWAMP_genes.pdf"), dpi = 450, bg = "white", height = 6, width = 8)
 ggsave(
   plot_grid(
-    plot_grid(p.cover, p.sumL[[2]], ncol = 2, rel_widths = c(0.33, 0.66), labels = "auto", label_size = 28), p.sumL[[3]], nrow = 2, labels = c("", "c"), label_size = 28), filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/PBMC_LOW_STATS.tiff"), dpi = 450, bg = "white",height = 12, width = 24)
+    plot_grid(p.cover, p.sumL[[2]], ncol = 2, rel_widths = c(0.33, 0.66), labels = "auto", label_size = 28), p.sumL[[3]], nrow = 2, labels = c("", "c"), label_size = 28), filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/PBMC_LOW_STATS.pdf"), dpi = 450, bg = "white",height = 12, width = 24)
 
 # 4. hPBMC (10, 12, 16 PCR cycles)
 
@@ -1140,7 +1140,7 @@ p2 <- ggplot(data = resqc.tmp, aes(x = GROUP, y = perc, fill = key)) +
 
 
 ggsave(p2, 
-       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_lowAmplificationCycles8CYCLES_RESQC.tiff", dpi = 450, bg = "white", width = 8, height = 6)
+       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_lowAmplificationCycles8CYCLES_RESQC.pdf", dpi = 450, bg = "white", width = 8, height = 6)
 
 
 p3 <- mydata %>%
@@ -1180,7 +1180,7 @@ p3 <- mydata %>%
   ggtitle("Mapping Statistics")
 
 ggsave(plot_grid(p2, p3, nrow = 2), bg = "white",
-       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/PBMC_lowAmplificationCycles_STAR_COMBINED.tiff", dpi = 450, width = 8, height = 10)
+       filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/PBMC_lowAmplificationCycles_STAR_COMBINED.pdf", dpi = 450, width = 8, height = 10)
 
 mycover <- right_join(cover, mydata %>% select(ID, NAME), by = "ID") %>%
   gather(Percentile, reads, -ID, -NAME) %>%
@@ -1215,7 +1215,7 @@ p.cover <- ggplot(mycover, aes(x = as.numeric(Percentile), color = as.factor(NAM
   theme(strip.background = element_blank(),
         strip.text = element_text(face = "bold"))
 
-ggsave(p.cover, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/PBMC_LOWAMP_geneBodyCoverage.tiff"), dpi = 450, height = 6, width = 10, bg = "white")
+ggsave(p.cover, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/PBMC_LOWAMP_geneBodyCoverage.pdf"), dpi = 450, height = 6, width = 10, bg = "white")
 
 # 5. Downsampling gene counts - cell types
 
@@ -1253,7 +1253,7 @@ filter(mydata, DEPTH %in% c(125000)) %>%
 # 3. Visualize (median / sd)
 p.LA.genes <- mydata %>%
   group_by(NAME, predicted.celltype.l2, DEPTH) %>%
-  summarise(m = median(count_0), sd = sd(count_0), n = n()) %>%
+  summarise(m = mean(count_0), sd = sd(count_0), n = n()) %>%
   ungroup() %>%
   filter(predicted.celltype.l2 %in% c("B naive","CD14 Mono","CD16 Mono","CD4 Naive","CD4 TCM","CD8 Naive","CD8 TEM","cDC2","pDC","NK","gdT","MAIT"),
          n > 2) %>%
@@ -1274,7 +1274,7 @@ p.LA.genes <- mydata %>%
   scale_fill_manual(values = c("#FF850D", "#7f3fb2")) + 
   facet_wrap("predicted.celltype.l2", nrow = 2)
 
-ggsave(p.LA.genes, bg = "white", width = 20, height = 8, filename =  "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/FS_LA_exon_downsampling.tiff", dpi = 450)
+ggsave(p.LA.genes, bg = "white", width = 20, height = 8, filename =  "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/FS_LA_exon_downsampling.pdf", dpi = 450)
 ```
 
 ```{r TCR, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
@@ -1367,7 +1367,7 @@ p.trust4.full.tcr.b <- trust4.aggr %>%
   scale_fill_brewer(palette = "Set1") +
   ggtitle("CDR3aa Only")
 
-ggsave(plot_grid(p.trust4.full.tcr.b, p.trust4.full.tcr.a, ncol = 1), filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/TRUST4_TCRcounts.tiff", dpi = 450, height = 8, width = 9, bg = "white")
+ggsave(plot_grid(p.trust4.full.tcr.b, p.trust4.full.tcr.a, ncol = 1), filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/TRUST4_TCRcounts.pdf", dpi = 450, height = 8, width = 9, bg = "white")
 
 
 # 11.3. Visualize TCR distribution on UMAP
@@ -1389,7 +1389,7 @@ p.trust4 <- plot_grid(
   DimPlot(ssce.la, group.by = "is.TCR", pt.size = 1.25, cols = c("darkred")) + theme_void(),
   DimPlot(ssce.la, group.by = "is.full.TCR", pt.size = 1.25, cols = c("grey", "darkblue")) + theme_void(), nrow = 1)
 
-ggsave(p.trust4, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/TRUST4.tiff", dpi = 450, height = 6, width = 12, bg = "white")
+ggsave(p.trust4, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/TRUST4.pdf", dpi = 450, height = 6, width = 12, bg = "white")
 
 sum(ssce.la$predicted.celltype.l1 %in% c("CD4 T", "CD8 T", "other T") & ssce.la$is.TCR, na.rm = T) / sum(ssce.la$predicted.celltype.l1 %in% c("CD4 T", "CD8 T", "other T"), na.rm = T)
 sum(!ssce.la$predicted.celltype.l1 %in% c("CD4 T", "CD8 T", "other T") & ssce.la$is.TCR, na.rm = T)

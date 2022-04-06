@@ -519,9 +519,9 @@ invasion.plot <- function(group, suffix = "group1"){
     xlab("Number of Consecutive 5' Mismatches in UMI") + 
     ylab("Match Upstream\nSequence (%)") 
 
-  ggsave(p.perfect, filename = paste0( "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/StrandInvasion_Perfect.", suffix,".tiff"), dpi= 450, height = 5.4*length(unique(filter(dat,GROUP %in% group)$SUBGROUPS)), width = 12)
-  ggsave(p.all, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/StrandInvasion_Mismatch.", suffix,".tiff"), dpi= 450, width = 14, height = 5.5)
-  ggsave(p.all.GGG, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/StrandInvasion_Mismatch.", suffix,".GGG.tiff"), dpi= 450, width = 14, height = 5.5)
+  ggsave(p.perfect, filename = paste0( "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/StrandInvasion_Perfect.", suffix,".pdf"), dpi= 450, height = 5.4*length(unique(filter(dat,GROUP %in% group)$SUBGROUPS)), width = 12)
+  ggsave(p.all, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/StrandInvasion_Mismatch.", suffix,".pdf"), dpi= 450, width = 14, height = 5.5)
+  ggsave(p.all.GGG, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/StrandInvasion_Mismatch.", suffix,".GGG.pdf"), dpi= 450, width = 14, height = 5.5)
 
 }
   
@@ -562,7 +562,7 @@ for(i in unique(res.annotated.final$SUBGROUPS)){
   
 }
 
-ggsave(plot_grid(p[[1]], p[[2]],p[[3]], p[[4]], nrow = 1), bg = "white", filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/seqlogo_upstream.GGG.tiff"), dpi= 450, height = 4, width = 20)
+ggsave(plot_grid(p[[1]], p[[2]],p[[3]], p[[4]], nrow = 1), bg = "white", filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/seqlogo_upstream.GGG.pdf"), dpi= 450, height = 3, width = 16)
 
   
 # Seqlogo of the Upstream sequences
@@ -598,7 +598,7 @@ p.logo <- plot_grid(p.upstream[[1]],
           labels = c("SS3\nHagemann-J.", "TSO-FS-UMI\nSTRT-dT", "TSO-CTAAC\nSTRT-dT", "TSO-AAGCA\nSTRT-dT"), ncol = 2)
   
   
-ggsave(p.logo, bg = "white", filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/seqlogo_upstream.tiff", dpi= 450, height = 24, width = 36)
+ggsave(p.logo, bg = "white", filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/seqlogo_upstream.pdf", dpi= 450, height = 24, width = 36)
 ```
 
 ```{r UMI invasion - read orientation, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
@@ -607,7 +607,7 @@ ggsave(p.logo, bg = "white", filename = "/home/vincent.hahaut/data_storage/FS_in
 
 # 1. Load file containing the sequence adjacent to the UMI
 # UMI reads assigned to exon / intron features
-1391221 <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/bias.umi.exon_intron_unstranded.rds")
+res.annotated.final <- read_rds("/home/vincent.hahaut/data_storage/FS_intermediate_file/bias.umi.exon_intron_unstranded.rds")
 
 # 2. Aggregate results
 # Could probably clean-up this part
@@ -689,7 +689,7 @@ for(SUB in c("EXON - Concordant" ,  "EXON - Discordant",   "INTRON - Concordant"
 }
 
 
-ggsave(plot_grid(nrow = 1,  p.sub[[1]], p.sub[[2]], p.sub[[3]], p.sub[[4]]), bg = "white", filename = paste0( "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/strandInvasion_intronicReads.group1.tiff"), dpi= 450, height = 6, width = 18)
+ggsave(plot_grid(nrow = 2,  p.sub[[1]], p.sub[[2]], p.sub[[3]], p.sub[[4]]), bg = "white", filename = paste0( "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/strandInvasion_intronicReads.group1.pdf"), dpi= 450, height = 12, width = 12)
 
 
 ```
@@ -804,7 +804,7 @@ plogo <- plot_grid(ncol = 3,
     ylim(c(0,0.25))
 )
 
-ggsave(plogo, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/ggseqlogo.tiff", dpi = 450, height = 16, width = 24)
+ggsave(plogo, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/ggseqlogo.pdf", dpi = 450, height = 16, width = 24)
 
 ```
 
@@ -1007,5 +1007,5 @@ p.motifs <- ggplot() +
   geom_segment(data = mysegs, aes(x = as.factor(starts), xend = as.factor(starts), y = 0, yend = yend), linetype = "dashed", color = "darkred") 
 
 
-ggsave(p.motifs, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/S1_Motif_Position.tiff", dpi = 300, height = 16, width = 24)
+ggsave(p.motifs, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/S1_Motif_Position.pdf", dpi = 300, height = 16, width = 24)
 ```
