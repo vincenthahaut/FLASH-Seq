@@ -4,7 +4,7 @@
 
 This repository contains the scripts related to the analysis of the FLASH-Seq data.
 
-If something is still missing please just contact me !
+If you encounter a problem, contact me at vincent.hahaut [at] iob.ch
 
 ## Folder Architecture:
 
