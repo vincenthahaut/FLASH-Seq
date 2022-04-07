@@ -206,9 +206,9 @@ p.variants <- plot_grid(nrow = 1,
                           geom_point(aes(y = m), position = position_dodge(1000)) +
                           scale_color_manual(values = cols[4:5]) +
                           theme_cowplot(font_size = 16) + 
-                          theme(legend.position = "none", legend.title = element_blank(),axis.text.x = element_text(angle = 45, hjust = 1, size = 9)) +
+                          theme(legend.position = "none", legend.title = element_blank(),axis.text.x = element_text(angle = 45, hjust = 1, size = 14)) +
                           scale_x_continuous(breaks = c(5000, 10000,20000, 40000, 50000,75000,100000, 125000, 250000, 375000, 500000, 750000), 
-                                             labels = c("", "","", "", "","","100K", "125K", "250K", "375K", "500K", "750K")) +
+                                             labels = c("", "","", "", "","","", "125K", "250K", "375K", "500K", "750K")) +
                           scale_y_continuous(breaks = seq(0,4000,500), limits = c(0,4000), labels = c("0",  "500", "1,000", "1,500", "2,000", "2,500", "3,000", "3,500", "4,000")) +
                           xlab("Downsampled Reads") + ylab("SNPs") + ggtitle("Total SNPs"),
                         # False negative / True positive
@@ -219,11 +219,11 @@ p.variants <- plot_grid(nrow = 1,
     geom_point(aes(y = m), position = position_dodge(1000)) +
     scale_color_manual(values = cols[1:3]) +
     theme_cowplot(font_size = 16) + 
-    theme(legend.position = "none", legend.title = element_blank(),axis.text.x = element_text(angle = 45, hjust = 1, size = 9)) +
+    theme(legend.position = "none", legend.title = element_blank(),axis.text.x = element_text(angle = 45, hjust = 1, size = 14)) +
     scale_x_continuous(breaks = c(5000, 10000,20000, 40000, 50000,75000,100000, 125000, 250000, 375000, 500000, 750000), 
-                       labels = c("", "","", "", "","","100K", "125K", "250K", "375K", "500K", "750K")) +
+                       labels = c("", "","", "", "","","", "125K", "250K", "375K", "500K", "750K")) +
     scale_y_continuous(breaks = seq(0,2000,500), limits = c(0,2000), labels = c("0", "500", "1,000", "1,500", "2,000")) +
-    xlab("Downsampled Reads") + ylab("SNPs") + ggtitle("True Variants"),
+    xlab("Downsampled Reads") + ylab("SNPs") + ggtitle("True SNPs"),
     # False Positive
   ggplot(filter(vcf.dp.aggr, name %in% c("false_positive", "false_positive.QUAL")), aes(x = as.numeric(DEPTH), fill = name, color = name)) + 
     geom_hline(yintercept = seq(0,2000,500), linetype = "dashed", color = "darkgrey") +
@@ -232,9 +232,9 @@ p.variants <- plot_grid(nrow = 1,
     geom_point(aes(y = m), position = position_dodge(1000)) +
     scale_color_manual(values = cols[6:8]) +
     theme_cowplot(font_size = 16) + 
-    theme(legend.position = "none", legend.title = element_blank(),axis.text.x = element_text(angle = 45, hjust = 1, size = 9)) +
+    theme(legend.position = "none", legend.title = element_blank(),axis.text.x = element_text(angle = 45, hjust = 1, size = 14)) +
     scale_x_continuous(breaks = c(5000, 10000,20000, 40000, 50000,75000,100000, 125000, 250000, 375000, 500000, 750000), 
-                       labels = c("", "","", "", "","","100K", "125K", "250K", "375K", "500K", "750K")) +
+                       labels = c("", "","", "", "","","", "125K", "250K", "375K", "500K", "750K")) +
     scale_y_continuous(breaks = seq(0,2500,500), limits = c(0,2500), labels = c("0",  "500", "1,000", "1,500", "2,000", "2,500")) +
     xlab("Downsampled Reads") + ylab("SNPs") + ggtitle("False Positives"),
   # False Positive
@@ -245,9 +245,9 @@ p.variants <- plot_grid(nrow = 1,
     geom_point(aes(y = m), position = position_dodge(1000)) +
     scale_color_manual(values = cols[2:3]) +
     theme_cowplot(font_size = 16) + 
-    theme(legend.position = "none", legend.title = element_blank(),axis.text.x = element_text(angle = 45, hjust = 1, size = 9)) +
+    theme(legend.position = "none", legend.title = element_blank(),axis.text.x = element_text(angle = 45, hjust = 1, size = 14)) +
     scale_x_continuous(breaks = c(5000, 10000,20000, 40000, 50000,75000,100000, 125000, 250000, 375000, 500000, 750000), 
-                       labels = c("", "","", "", "","","100K", "125K", "250K", "375K", "500K", "750K")) +
+                       labels = c("", "","", "", "","","", "125K", "250K", "375K", "500K", "750K")) +
     scale_y_continuous(breaks = seq(0,80,20), limits = c(0,80)) +
     xlab("Downsampled Reads") + ylab("SNPs (%)") + ggtitle("True Positives (%)")
 )
@@ -284,11 +284,11 @@ p.depth <- plot_grid(nrow = 2,
     scale_color_brewer(palette = "Dark2") +
     scale_fill_brewer(palette = "Dark2") +
     theme_cowplot(font_size = 20) + 
-    theme(legend.position = "none", legend.title = element_blank(),axis.text.x = element_text(angle = 45, hjust = 1, size = 12)) +
+    theme(legend.position = "none", legend.title = element_blank(),axis.text.x = element_text(angle = 45, hjust = 1, size = 14)) +
     scale_x_continuous(breaks = c(5000, 10000,20000, 40000, 50000,75000,100000, 125000, 250000, 375000, 500000, 750000), 
                        labels = c("", "","", "", "50K","75K","100K", "125K", "250K", "375K", "500K", "750K")) +
     scale_y_continuous(breaks = seq(0,400,100)) +
-    xlab("Downsampled Reads") + ylab("Variants") + ggtitle("True Positives"),
+    xlab("Downsampled Reads") + ylab("SNPs") + ggtitle("True Positives"),
   ggplot(filter(vcf.dp.depth.aggr, name %in% c("false_positive")), aes(x = as.numeric(DEPTH), fill = bin, color = bin)) + 
     geom_hline(yintercept = seq(0,700,100), linetype = "dashed", color = "darkgrey") +
     geom_errorbar(aes(ymin = m - s, ymax = m + s), alpha = 0.5) +
@@ -297,11 +297,11 @@ p.depth <- plot_grid(nrow = 2,
     scale_color_brewer(palette = "Dark2") +
     scale_fill_brewer(palette = "Dark2") +
     theme_cowplot(font_size = 20) +
-    theme(legend.position = "none", legend.title = element_blank(),axis.text.x = element_text(angle = 45, hjust = 1, size = 12)) +
+    theme(legend.position = "none", legend.title = element_blank(),axis.text.x = element_text(angle = 45, hjust = 1, size = 14)) +
     scale_x_continuous(breaks = c(5000, 10000,20000, 40000, 50000,75000,100000, 125000, 250000, 375000, 500000, 750000), 
                        labels = c("", "","", "", "","","100K", "125K", "250K", "375K", "500K", "750K")) +
     scale_y_continuous(breaks = seq(0,700,100)) +
-    xlab("Downsampled Reads") + ylab("Variants") + ggtitle("False Positive")
+    xlab("Downsampled Reads") + ylab("SNPs") + ggtitle("False Positive")
 )
 
 ggsave(p.depth, bg = "white", filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_VARIANTS_DEPTH.pdf", dpi = 450, height = 8, width = 7)

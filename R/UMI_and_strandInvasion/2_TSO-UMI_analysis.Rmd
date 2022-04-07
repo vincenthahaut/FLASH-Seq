@@ -293,7 +293,7 @@ relationShipInternalUMI <- function(condition = group1, suffix = "group1", facet
 relationShipInternalUMI(group1, suffix = "group1", width = 24, h = 12, facets.row = 2)
 relationShipInternalUMI(group2, suffix = "group2", width = 20, h = 4+2*length(group2), facets.row = 2)
 
-relationShipInternalUMI(group4, suffix = "group4", width = 20, h = 24, facets.row = 4)
+relationShipInternalUMI(group4, suffix = "group4", width = 18, h = 20, facets.row = 4)
 relationShipInternalUMI(group5, suffix = "group5", h = 5, w = 20, facets.row = 1)
 
 
@@ -514,7 +514,7 @@ downsampling <- ggplot() +
   geom_errorbar(data = df.counts, aes(x = as.numeric(DOWN), color = TYPE, ymin = m-s, ymax = m+s), position = position_dodge(1000)) +
   facet_wrap(nrow = 1, "GROUP") + 
   theme_bw(base_size = 20) +
-  theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1, size = 12)) + 
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1, size = 14)) + 
   ylab("Genes Detected") +  
   scale_color_brewer(palette = "Set1") + 
   scale_y_continuous(labels = scales::comma) +
@@ -566,7 +566,7 @@ downsampling2 <- ggplot(df.counts, aes(x = as.numeric(DOWN), color = TYPE)) +
   geom_point(aes(y = m), position = position_dodge(1000)) +
   geom_line(aes(y = m, group = TYPE), position = position_dodge(1000)) +
   geom_errorbar(aes(ymin = m-s, ymax = m+s), position = position_dodge(1000)) +
-  theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1, size = 12)) + 
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1, size = 14)) + 
   ylab("Proportion of\nDetected Genes") +  
   scale_color_brewer(palette = "Set1") + 
   scale_y_continuous(breaks = seq(0,1.5,.25)) +
@@ -651,13 +651,13 @@ p.molecules <- ggplot() +
   ylab("Unique Molecules") +
   xlab("Downsampled Reads") +
   theme_bw(base_size = 20) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 13),
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 15),
         axis.text.y = element_text(size = 13)) +
   geom_segment(data = df.umi, aes(x = 75000, xend = 75000, y = 0, yend = 32459), linetype = "dashed", color = "chartreuse3") +
   geom_segment(data = df.umi, aes(x = 0, xend = 75000, y = 32459, yend = 32459), linetype = "dashed", color = "chartreuse3") +
   scale_y_continuous(breaks = c(10000, 20000, 40000, 50000, 75000, 100000, 125000, 250000), labels = c("", "", "", "50K", "75K", "100K", "125K", "250K"), limits = c(0,250000)) +
   scale_x_continuous(breaks = c(10000, 20000, 40000, 50000, 75000, 100000, 125000, 250000), labels = c("", "", "", "50K", "75K", "100K", "125K", "250K"), limits = c(0,250000)) +
-  geom_text(data = p.signif, aes(x = 75000, y = 230000, label = p.adj.signif), size = 6)
+  geom_text(data = p.signif, aes(x = 75000, y = 230000, label = p.adj.signif), size = 6.5)
 
 
 ggsave(
@@ -876,7 +876,7 @@ p.numberGenes <- ggplot() +
   scale_fill_brewer(palette = "Set1") +
   xlab("") + ylab("Genes Detected") + 
   theme(legend.title = element_blank(), legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1, size = 12)) +
-  ggpubr::stat_pvalue_manual(p.signif, label = "{p.adj.signif}",  xmin = "xmin", xmax = "xmax", tip.length = 0.01, size = 4) +
+  ggpubr::stat_pvalue_manual(p.signif, label = "{p.adj.signif}",  xmin = "xmin", xmax = "xmax", tip.length = 0.01, size = 5.5) +
   ggtitle("Genes Detected (> 0 read)")
 
 # 2. Length Gene
@@ -909,7 +909,7 @@ p.numberLength <- ggplot() +
   scale_fill_brewer(palette = "Set1") +
   xlab("") + ylab("Gene Length (bp)") + 
   theme(legend.title = element_blank(), legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1, size = 12)) +
-  ggpubr::stat_pvalue_manual(p.signif, label = "{p.adj.signif}",  xmin = "xmin", xmax = "xmax", tip.length = 0.01, size = 4) +
+  ggpubr::stat_pvalue_manual(p.signif, label = "{p.adj.signif}",  xmin = "xmin", xmax = "xmax", tip.length = 0.01, size = 5.5) +
   ggtitle("Gene Lengths")
 
 
@@ -943,7 +943,7 @@ p.GCperc <- ggplot() +
   scale_fill_brewer(palette = "Set1") +
   xlab("") + ylab("GC (%)") + 
   theme(legend.title = element_blank(), legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1, size = 12)) +
-  ggpubr::stat_pvalue_manual(p.signif, label = "{p.adj.signif}",  xmin = "xmin", xmax = "xmax", tip.length = 0.01, size = 4) +
+  ggpubr::stat_pvalue_manual(p.signif, label = "{p.adj.signif}",  xmin = "xmin", xmax = "xmax", tip.length = 0.01, size = 5.5) +
   ggtitle("GC Content")
 
 
@@ -1003,9 +1003,9 @@ p.genetypes <- ggplot() +
   theme(legend.title = element_blank(), legend.position = "none", plot.title = element_text(face = "bold"),
         axis.text.x = element_text(angle = 45, hjust = 1, size = 12 )) +
   geom_segment(data = filter(p.signif, name == "Protein Coding Gene"), aes(x = x, xend = xend, y = y-0.01*y, yend = y-0.01*y,)) +
-  geom_text(data = filter(p.signif, name == "Protein Coding Gene"), aes(x = (x+xend)/2, y = y, label = p.adj.signif), size = 4) +
+  geom_text(data = filter(p.signif, name == "Protein Coding Gene"), aes(x = (x+xend)/2, y = y, label = p.adj.signif), size = 5) +
   geom_segment(data = filter(p.signif, name != "Protein Coding Gene"), aes(x = x, xend = xend, y = y+0.09*y, yend = y+0.09*y)) +
-  geom_text(data = filter(p.signif, name != "Protein Coding Gene"), aes(x = (x+xend)/2, y = y+0.13*y, label = p.adj.signif), size = 4)
+  geom_text(data = filter(p.signif, name != "Protein Coding Gene"), aes(x = (x+xend)/2, y = y+0.13*y, label = p.adj.signif), size = 5)
 
 
 ggsave(plot_grid(plot_grid(p.numberGenes, p.numberLength, p.GCperc, nrow = 1), ncol = 1, p.genetypes, rel_heights = c(0.45,0.55)),
@@ -1066,12 +1066,12 @@ p.dedup <- ggplot(dedup.dist.aggr, aes(x = edit_distance, group = TYPE, color = 
   geom_line(aes(y = m), position = position_dodge(0.1)) + 
   geom_point(aes(y = m), position = position_dodge(0.1)) +
   facet_wrap("GROUP", scales = "free_x", nrow = 2) +
-  theme_bw(base_size = 20) +
+  theme_bw(base_size = 18) +
   xlab("Average binned UMI edit distance") + 
   ylab("Genes Detected (%)") + 
   theme(legend.position = "bottom", legend.title = element_blank())
 
-ggsave(p.dedup, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_UMI_editDistanceUMI.pdf", bg = "white", dpi = 450, height = 8, width = 6)
+ggsave(p.dedup, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_UMI_editDistanceUMI.pdf", bg = "white", dpi = 450, height = 6, width = 4)
 
 ```
 
@@ -1096,7 +1096,7 @@ results <- data_frame(ID = colnames(salmon.all),
 mycols <- c("SS3" = "#e6194B",
   "TSO-ATAAC\nSTRT-dT"= "#3cb44b",
   "TSO-CAGCA\nSTRT-dT"= "#ffe119",
-  "SS3\ndata from\nHagemann-J. et al" = "#dcbeff",
+  "SS3 data from\nHagemann-J. et al" = "#dcbeff",
   "TSO-CATCA\nSTRT-dT" ='#bfef45',
   "TSO-CTAAC\nSTRT-dT" = '#808000')
 
@@ -1104,7 +1104,7 @@ mycols <- c("SS3" = "#e6194B",
 results.aggr <- results %>%
   mutate(GROUP = case_when(
     grepl("5_SS3|6_SS3", ID) ~ "SS3",
-    grepl("SS3fwd", ID) ~ "SS3\ndata from\nHagemann-J. et al",
+    grepl("SS3fwd", ID) ~ "SS3 data from\nHagemann-J. et al",
     grepl("STRToligoT_Spacer2", ID) ~ "TSO-ATAAC\nSTRT-dT",
     grepl("STRToligoT_Spacer1", ID) ~ "TSO-CAGCA\nSTRT-dT",
     grepl("SS3-CGTAC", ID) ~ "SS3-CGTAC\nFS-dT",
@@ -1121,7 +1121,7 @@ results.aggr <- results %>%
     grepl("SS3oligoT_Spacer1", ID) ~ "TSO-CAGCA\nSS3-dT",
     grepl("276_LA", ID) ~ "LA-TSO-CAGCA\nSTRT-dT",
     grepl("SS3oligoT_Fstso", ID) ~ "TSO-FS-UMI\nSS3-dT"))  %>%
-  filter(GROUP %in% c("SS3\ndata from\nHagemann-J. et al","TSO-CATCA\nSTRT-dT","TSO-CTAAC\nSTRT-dT","TSO-CAGCA\nSTRT-dT")) %>%
+  filter(GROUP %in% c("SS3 data from\nHagemann-J. et al","TSO-CATCA\nSTRT-dT","TSO-CTAAC\nSTRT-dT","TSO-CAGCA\nSTRT-dT")) %>%
   pivot_longer(-c(ID, GROUP)) %>%
   mutate(name = case_when(name == "counts.tpm1" ~ "Isoforms\nTPM>1",
                           name == "counts.tpm5" ~ "Isoforms\nTPM>5",
@@ -1143,18 +1143,18 @@ p.isoforms <- ggplot() +
   geom_violin(data = results.aggr, aes(y = value, x = GROUP, fill = name)) + 
   geom_boxplot(data = results.aggr, aes(y = value, x = GROUP, fill = name), width =  0.1, position = position_dodge(0.9)) +
   scale_fill_brewer(palette = "Dark2") +
-  theme_bw(base_size = 20) +
+  theme_bw(base_size = 18) +
   facet_wrap("name") +
   xlab("") +
   scale_y_continuous(labels = scales::comma) +
-  theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1, size = 12)) + 
+  theme(legend.position = "none", strip.text = element_text(size = 14), axis.text.x = element_text(angle = 45, hjust = 1, size = 11)) + 
   ylab("Features Detected") +
   ggpubr::stat_pvalue_manual(filter(p.signif, name == "Genes\n0>Read"), label = "{p.adj.signif}",  step.increase = 0.075, tip.length = 0.01, size = 5) +
   ggpubr::stat_pvalue_manual(filter(p.signif, name == "Isoforms\nTPM>5"), label = "{p.adj.signif}",  step.increase = 0.075, tip.length = 0.01, size = 5) + 
   ggpubr::stat_pvalue_manual(filter(p.signif, name == "Isoforms\nTPM>1"), label = "{p.adj.signif}",  step.increase = 0.075, tip.length = 0.01, size = 5) +
   ggtitle("Pseudoalignment - Isoforms / Genes")
 
-ggsave(p.isoforms, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_UMI_isoforms.pdf", dpi = 450, height = 9, width = 10, bg = "white")
+ggsave(p.isoforms, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_UMI_isoforms.pdf", dpi = 450, height = 7, width = 8, bg = "white")
 ```
 
 ```{r UMI - READS %, echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}

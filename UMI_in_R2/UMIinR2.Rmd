@@ -250,7 +250,7 @@ p.star <- ggplot() +
         panel.grid.major.y = element_line(linetype = "dotted", color = "darkgrey", size = 0.5),
         axis.line.y.right = element_line(color = "black", linetype = "solid", size = 1)) +
   scale_y_continuous(breaks = seq(0,100,10), limits = c(0,101)) +
-  ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}",  tip.length = 0.01, step.increase = 0.04, size = 4) + ggtitle("FS-UMI CTAAC")
+  ggpubr::stat_pvalue_manual(p.signif, label = "p={p.adj.signif}",  tip.length = 0.01, step.increase = 0.04, size = 5) + ggtitle("FS-UMI CTAAC")
 
 # 4.2. SS3
 p.star.ss3 <- ggplot() +
@@ -272,8 +272,7 @@ p.star.ss3 <- ggplot() +
         panel.grid.major.y = element_line(linetype = "dotted", color = "darkgrey", size = 0.5),
         axis.line.y.right = element_line(color = "black", linetype = "solid", size = 1)) + ggtitle("SS3")
 
-p.star <- plot_grid(p.star, p.star.ss3, rel_widths = c(1,0.5))
-ggsave(p.star, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/UMIinR2.star.stats.pdf", dpi = 450, bg = "white", width = 12, height = 5)
+ggsave(p.star, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/UMIinR2.star.stats.pdf", dpi = 450, bg = "white", width = 7, height = 4)
 ```
 
 # Read Distribution
@@ -340,7 +339,7 @@ p.readDistrib <- ggplot() +
           strip.text = element_text(face = "bold"),
           panel.grid.major.y = element_line(linetype = "dotted", color = "darkgrey", size = 0.5),
           axis.line.y.right = element_line(color = "black", linetype = "solid", size = 1)) +
-  ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}",  tip.length = 0.01, step.increase = 0.04, size = 4) 
+  ggpubr::stat_pvalue_manual(p.signif, label = "p={p.adj.signif}",  tip.length = 0.01, step.increase = 0.04, size = 5) 
 
 
 # 4.2. SS3 data
@@ -365,8 +364,7 @@ p.readDistrib.SS3 <- ggplot() +
           panel.grid.major.y = element_line(linetype = "dotted", color = "darkgrey", size = 0.5),
           axis.line.y.right = element_line(color = "black", linetype = "solid", size = 1)) 
 
-p.readDistrib.all <- plot_grid(p.readDistrib, p.readDistrib.SS3, rel_widths = c(1,0.5))
-ggsave(p.readDistrib.all, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/UMIinR2.resqc.stats.pdf", dpi = 450, bg = "white", width = 16, height = 5)
+ggsave(p.readDistrib, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/UMIinR2.resqc.stats.pdf", dpi = 450, bg = "white", width = 10, height = 4)
 
 ```
 

@@ -326,8 +326,8 @@ p1.500K <- ggplot() +
         axis.text.x = element_blank(), axis.ticks.x = element_blank(),
         legend.text = element_text(size = 22))  +
   scale_y_continuous(breaks = seq(0,12000,1000), labels = c("0", "1,000", "2,000", "3,000", "4,000", "5,000", "6,000", "7,000", "8,000", "9,000", "10,000", "11,000", "12,000")) +
-  ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}",  tip.length = 0.01, size = 4) +
-  geom_text(data = data.frame(NAME = c("SS2", "SS3", "FS")), aes(y = c(200,200,200), x = c(1,2,3), label = c("n=80", "n=51", "n=105")), size = 5) 
+  ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}",  tip.length = 0.01, size = 6) +
+  geom_text(data = data.frame(NAME = c("SS2", "SS3", "FS")), aes(y = c(200,200,200), x = c(1,2,3), label = c("n=80", "n=51", "n=105")), size = 6) 
 
 # 2.3. Save results
 ggsave(p1.500K, 
@@ -381,7 +381,7 @@ mydata.down <- mydata %>%
   filter(DEPTH <= 500000) %>%
   dplyr::select(count_0, NAME, DEPTH) %>%
   group_by(NAME, DEPTH) %>%
-  summarise(m = median(count_0), sd = sd(count_0)) 
+  summarise(m = mean(count_0), sd = sd(count_0)) 
 
 # 5.2. Display results
 p2 <- mydata.down %>%
@@ -688,9 +688,9 @@ p.diversity <- ggplot() +
   geom_hline(yintercept = seq(11000,13500,1000), linetype = "dashed", color ="darkgrey") +
   geom_violin(data = test, aes(x = GROUP, y = nGenes, fill = GROUP)) +
   geom_boxplot(data = test, aes(x = GROUP, y = nGenes, fill = GROUP), width = 0.1) +
-  ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}",  tip.length = 0.01, size = 4) +
+  ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}",  tip.length = 0.01, size = 6) +
   theme_cowplot(font_size = 20) +
-  theme(legend.position = "none", axis.text.x = element_text(size = 14)) +
+  theme(legend.position = "none", axis.text.x = element_text(size = 16)) +
   xlab("") +
   scale_y_continuous(breaks = seq(11000,13500,1000), labels = c("11,000", "12,000", "13,000")) +
   ylab("Gene Diversity") +
@@ -746,7 +746,7 @@ p.gene.content <- ggplot() +
                                "SSsc" = "#984EA3")) + 
   scale_y_continuous(label = scales::comma) +
   ylab("Genes Detected") +
-  ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}",  tip.length = 0.01, size = 4) +
+  ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}", step.group.by = "gene_type", step.increase = 0.025, tip.length = 0.01, size = 6) +
   facet_wrap("gene_type", ncol = 2, scales = "free") 
 
 ggsave(p.gene.content, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_geneContent.pdf"), dpi = 450, height = 16, width = 12)
@@ -825,7 +825,7 @@ p.GC <- ggplot() +
   xlab("") +
   theme_cowplot(font_size = 24) +
   theme(legend.position = "none") + 
-  ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}",  tip.length = 0.01, size = 4) 
+  ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}",  tip.length = 0.01, size = 6) 
 
 # 12.2. Gene length
 
@@ -857,7 +857,7 @@ p.Length <- ggplot() +
   scale_y_continuous(breaks = seq(2500,4500,500), label = scales::comma) +
   theme_cowplot(font_size = 24) +
   theme(legend.position = "none") + 
-  ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}",  tip.length = 0.01, size = 4) 
+  ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}",  tip.length = 0.01, size = 6) 
 
 
 ggsave(plot_grid(align = "v", p.GC + theme(legend.position = "none"), p.Length  + theme(legend.position = "none"), ncol = 2), filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_DE_explore.pdf", dpi = 450, height = 6, width = 12, bg = "white")
@@ -932,15 +932,15 @@ p.isoform.HEK <- ggplot() +
   facet_wrap("name",  nrow = 1) + 
   scale_y_continuous(breaks = seq(15000, 30000, 5000), labels = c("15,000", "20,000", "25,000", "30,000")) +
   theme(legend.position = "none", axis.text.x = element_text(size = 12)) +
-  ggpubr::stat_pvalue_manual(filter(p.signif, name == "TPM > 1"), label = "{p.adj.signif}",  step.increase = 0.01, tip.length = 0.01, size = 4) +
-  ggpubr::stat_pvalue_manual(filter(p.signif, name == "TPM > 5"),, label = "{p.adj.signif}",  step.increase = 0.03, tip.length = 0.01, size = 4) +
+  ggpubr::stat_pvalue_manual(filter(p.signif, name == "TPM > 1"), label = "{p.adj.signif}",  step.increase = 0.03, tip.length = 0.01, size = 6) +
+  ggpubr::stat_pvalue_manual(filter(p.signif, name == "TPM > 5"),, label = "{p.adj.signif}",  step.increase = 0.05, tip.length = 0.01, size = 6) +
   xlab("") +
   ylab("Transcripts Detected") +
   scale_fill_manual(values = c("FS - 25 µL" = "#E41A1C",
                                "SS2" = "#377EB8",
                                "FS - 5 µL" = "#FF850D",
                                "SS3" = "#4DAF4A"))
-ggsave(p.isoform.HEK, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_isoforms.pdf", dpi = 450, width = 10, height = 8, bg = "white")
+ggsave(p.isoform.HEK, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_isoforms.pdf", dpi = 450, width = 11, height = 8, bg = "white")
 
 # 15. Gained genes against reference depth
 
@@ -994,7 +994,7 @@ saturation <- mydata %>%
 
 ggsave(saturation, filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_saturation.pdf", dpi = 450, height = 6, width = 16, bg = "white")
 
-ggsave(plot_grid(p2, saturation, nrow = 2), filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_saturation_downsampling.pdf", dpi = 500, height = 10, width = 11, bg = "white")
+ggsave(plot_grid(p2 + theme(axis.title.x = element_blank()), saturation, nrow = 2), filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_saturation_downsampling.pdf", dpi = 500, height = 8, width = 10, bg = "white")
 
 ```
 
@@ -1161,7 +1161,7 @@ p6 <- corrs %>%
   geom_hline(yintercept = seq(0.40, 0.75, 0.05), linetype = "dotted", color = "darkgrey") +
   geom_violin(aes(fill = GROUP)) +
   geom_boxplot(aes(fill = GROUP), width = 0.1) +
-  theme_cowplot(font_size = 18) +
+  theme_cowplot(font_size = 22) +
   scale_fill_manual(values = c("FS - 25µL" = "#E41A1C",
                                                          "SS2" = "#377EB8",
                                                          "SS3" = "#4DAF4A",
@@ -1169,7 +1169,7 @@ p6 <- corrs %>%
   theme(legend.position = "none") +
   xlab("") +
   ylab("Cell-to-Cell Correlation (tau)") +
-  ggpubr::stat_pvalue_manual(p.signif, label = "{p.adj.signif}",  tip.length = 0.01, size = 4)
+  ggpubr::stat_pvalue_manual(p.signif, label = "{p.adj.signif}",  step.increase = 0.02, tip.length = 0.01, size = 5)
 
 
 ggsave(p6, 
@@ -1328,8 +1328,8 @@ p1 <- ggplot() +
         axis.title = element_text(size = 20)) +
   facet_wrap("threshold", scales = "free_y") +
   geom_text(data = mydata.tmp, aes(x = NAME, label=paste0("n=", ..count..)), y = 200, stat='count', size=5) +
-  ggpubr::stat_pvalue_manual(filter(du, threshold == "count > 0"), label = "{p.adj.signif}",  step.increase = 0.05, tip.length = 0.01, size = 3) +  
-  ggpubr::stat_pvalue_manual(filter(du, threshold == "count > 5"), label = "{p.adj.signif}",  step.increase = 0.05, tip.length = 0.01, size = 3) 
+  ggpubr::stat_pvalue_manual(filter(du, threshold == "count > 0"), label = "{p.adj.signif}",  step.increase = 0.075, tip.length = 0.01, size = 4.5) +  
+  ggpubr::stat_pvalue_manual(filter(du, threshold == "count > 5"), label = "{p.adj.signif}",  step.increase = 0.08, tip.length = 0.01, size = 4.5) 
 
 ggsave(p1, 
        filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_lowAmplificationCycles.reviewer.pdf", bg = "white", dpi = 450, width = 12, height = 6)
@@ -1807,7 +1807,7 @@ p6 <- corrs %>%
 "FS-LA-12c" = "#E31A1C", 
 "FS-19c" = "#B10026")) +
   ylab("Cell-to-Cell Correlation (tau)") +
-    ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}",  step.increase = 0.025, tip.length = 0.01, size = 4) 
+    ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}",  step.increase = 0.04, tip.length = 0.01, size = 5) 
 
 ggsave(p6, 
        filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_LA_kendallCorr.pdf", bg = "white", dpi = 450, width = 6, height = 8)

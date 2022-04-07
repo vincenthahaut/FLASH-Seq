@@ -916,8 +916,13 @@ p.diversity <- res %>%
     scale_y_continuous(labels = c("0K", "2.5K", "5K", "7.5K", "10K")) +
     coord_flip() +
     theme_cowplot(font_size = 20) +
-    theme(panel.border = element_rect(size = 0.5, color = "black"), axis.title.x = element_text(size = 16), axis.text.x = element_text(size = 16), strip.background = element_blank(), strip.text = element_blank(), legend.position = "none", legend.direction = "horizontal", legend.title = element_blank(), axis.ticks.y = element_blank()) +
-    ylab("Gene Diversity") + xlab("") 
+    theme(panel.border = element_rect(size = 0.5, color = "black"), axis.title.x = element_text(size = 18), axis.text.x = element_text(size = 18), strip.background = element_blank(), strip.text = element_blank(), legend.position = "bottom", legend.direction = "horizontal", legend.title = element_blank(), axis.ticks.y = element_blank()) +
+    ylab("Gene Diversity") + xlab("")  +
+    theme(
+    legend.position = "bottom", 
+    legend.justification = "left",
+    legend.direction = "vertical")
+
 ggsave(p.diversity, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_diversity.pdf",
        dpi = 450, width = 6, height = 8, bg = "white")
 
@@ -978,7 +983,7 @@ res <- res %>%
 p.signif <- res %>%
   group_by(cell_type) %>%
   rstatix::dunn_test(value ~ name) %>%
-  rstatix::add_y_position(fun = "max", scales = "free") %>%
+  rstatix::add_y_position(fun = "max") %>%
   filter(group1 == "DROPLET") %>%
   filter(p.adj < 0.05) %>%
   mutate(p.adj = p.adjust(p, method = "bonferroni"),
@@ -990,8 +995,8 @@ p.diversity <- res %>%
   ggplot() +
   geom_violin(aes(x = name, fill = name, y = value)) +
   geom_boxplot(aes(x = name, fill = name, y = value), width = 0.1, position = position_dodge(width = 0.9)) +
-  ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}", step.increase = 0.05, step.group.by = "cell_type", tip.length = 0.01, size = 4) +
-  scale_y_continuous(seq(2000,8000,2000), labels = c("2,000", "4,000", "6,000", "8,000"), name = "Gene Diversity") + 
+  ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}", step.increase = 0.065, step.group.by = "cell_type", tip.length = 0.01, size = 5) +
+  scale_y_continuous(seq(2000,8000,2000), labels = c("2,000", "4,000", "6,000", "8,000"), limits = c(0,8500), name = "Gene Diversity") + 
   scale_fill_manual(values = c("UMI" = "#E7298A", 
                                "INTERNAL" = "#7570B3",
                                "DROPLET" = "#2ac7c2")) +
@@ -1004,7 +1009,7 @@ p.diversity <- res %>%
         axis.text.x = element_blank()) 
 
 ggsave(p.diversity, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_diversity.downsample.pdf",
-       dpi = 450, width = 16, height = 10, bg = "white")
+       dpi = 450, width = 18, height = 10, bg = "white")
 
 ```
 
@@ -1036,7 +1041,7 @@ df <- bind_rows(
 p.signif <- df %>%
   group_by(cell_type) %>%
   rstatix::dunn_test(count_0 ~ TYPE) %>%
-  rstatix::add_y_position(fun = "max", scales = "free") %>%
+  rstatix::add_y_position(fun = "max") %>%
   filter(group1 == "DROPLET") %>%
   filter(p.adj < 0.05) %>%
   mutate(p.adj = p.adjust(p, method = "bonferroni"),
@@ -1046,12 +1051,12 @@ p.detected <- df %>%
   ggplot() +
   geom_violin(aes(x = TYPE, fill = TYPE, y = count_0)) +
   geom_boxplot(aes(x = TYPE, fill = TYPE, y = count_0), width = 0.1, position = position_dodge(width = 0.9)) +
-  ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}", step.increase = 0.04, step.group.by = "cell_type", tip.length = 0.01, size = 4) +
+  ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}", step.increase = 0.04, step.group.by = "cell_type", tip.length = 0.01, size = 5) +
   scale_fill_manual(values = c("UMI" = "#E7298A", 
                                "INTERNAL" = "#7570B3",
                                "DROPLET" = "#2ac7c2")) +
   facet_wrap("cell_type", scales = "free_x", nrow = 2) +
-  scale_y_continuous(breaks = seq(0,8000,2000), labels = c("0", "2,000", "4,000", "6,000", "8,000")) + 
+  scale_y_continuous(breaks = seq(0,8000,2000), labels = c("0", "2,000", "4,000", "6,000", "8,000"), limits = c(0,8500)) + 
   theme_bw(base_size = 20) +
   ylab("Gene Detected") + xlab("") +
   theme(legend.position = "none", 
@@ -1062,9 +1067,9 @@ p.detected <- df %>%
 ggsave(p.detected, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_detected.downsample.pdf",
        dpi = 450, width = 16, height = 10, bg = "white")
 
-ggsave(plot_grid(p.diversity + theme(legend.position = "right") + ylab("Gene Diversity")  + theme(legend.position = "none"), 
-                 p.detected + theme(legend.position = "right")+ ylab("Genes Detected") + theme(legend.position = "none"), nrow = 2), filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_detected_diversity.downsample.pdf",
-       dpi = 450, width = 16, height = 12, bg = "white")
+ggsave(plot_grid(p.diversity + ylab("Gene Diversity")  + theme(legend.position = "none"), 
+                 p.detected + ylab("Genes Detected") + theme(legend.position = "none"), nrow = 2), filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_detected_diversity.downsample.pdf",
+       dpi = 450, width = 16, height = 10, bg = "white")
 
 ```
 
@@ -1167,7 +1172,7 @@ p.gene.per.cell <-
   geom_violin(data = filter(med, name != "FS-UMI\nAll\nTranscripts"), aes(x = name, y = value, fill = name)) +
   facet_wrap("cell_type.internal", nrow = 2) +
   geom_boxplot(data = filter(med, name != "FS-UMI\nAll\nTranscripts"), aes(x = name, y = value, fill = name), width = 0.05) +
-  ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}", step.increase = 0.025, step.group.by = "cell_type.internal", tip.length = 0.01, size = 4) +
+  ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}", step.increase = 0.025, step.group.by = "cell_type.internal", tip.length = 0.01, size = 5) +
   scale_fill_manual(values = c(#"FS-UMI\nAll\nTranscripts" = "#1B9E77",
                                "FS - all reads" = "#D95F02",
                                "FS - internal reads" = "#7570B3", 

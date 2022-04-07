@@ -926,12 +926,12 @@ p.heat.mono <- makeHeatmap(mysce = ssce.la, cell_type = c("CD14_Mono", "CD16_Mon
 p.heat.nk <- makeHeatmap(mysce = ssce.la, cell_type = c("NK"), size = 0)
 p.heat.otherT <- makeHeatmap(mysce = ssce.la, cell_type = c("MAIT", "gdT"), size = 0)
 
-p.heat.all <- makeHeatmap(mysce = ssce.la, cell_type = 
+p.heat.all <- makeHeatmap(size = 7, mysce = ssce.la, cell_type = 
                                c("B_intermediate", "B_memory", "B_naive","CD4_Naive", "CD4_Proliferating", "CD4_TCM", "CD4_TEM", "Treg","MAIT", "gdT","CD8_Naive", "CD8_Proliferating", "CD8_TCM", "CD8_TEM","CD14_Mono", "CD16_Mono","NK","cDC2", "pDC"))
 
-ggsave(p.heat.all, bg = "white", width = 18, height = 16, filename =  "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/FS_LA_heatmap_all.pdf", dpi = 600)
+ggsave(p.heat.all, bg = "white", width = 12, height = 16, filename =  "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/FS_LA_heatmap_all.pdf", dpi = 1000)
 ggsave(plot_grid(p.heat.B, p.heat.CD4, p.heat.CD8, p.heat.DC, 
-                 p.heat.mono, p.heat.nk, p.heat.otherT, ncol = 2), bg = "white", width = 12, height = 18, filename =  "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/FS_LA_heatmap_sep.pdf", dpi = 300)
+                 p.heat.mono, p.heat.nk, p.heat.otherT, ncol = 2), bg = "white", width = 14, height = 22, filename =  "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/FS_LA_heatmap_sep.pdf", dpi = 300)
 
 # Label statibility
 
@@ -1351,7 +1351,7 @@ p.trust4.full.tcr.a <- trust4.aggr %>%
   xlab("Downsampled Reads") + 
   theme_bw(base_size = 20) +
   theme(legend.position = "none") +
-  scale_x_discrete(labels = names(trust4)) +
+  scale_x_discrete(labels = c("20K", "40K", "50K", "75K", "100K", "125K")) +
   scale_fill_brewer(palette = "Set1") +
   ggtitle("Full V(D)JC-CDR3aa TCR")
 

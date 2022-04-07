@@ -520,8 +520,8 @@ invasion.plot <- function(group, suffix = "group1"){
     ylab("Match Upstream\nSequence (%)") 
 
   ggsave(p.perfect, filename = paste0( "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/StrandInvasion_Perfect.", suffix,".pdf"), dpi= 450, height = 5.4*length(unique(filter(dat,GROUP %in% group)$SUBGROUPS)), width = 12)
-  ggsave(p.all, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/StrandInvasion_Mismatch.", suffix,".pdf"), dpi= 450, width = 14, height = 5.5)
-  ggsave(p.all.GGG, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/StrandInvasion_Mismatch.", suffix,".GGG.pdf"), dpi= 450, width = 14, height = 5.5)
+  ggsave(p.all, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/StrandInvasion_Mismatch.", suffix,".pdf"), dpi= 450, width = 10, height = 5)
+  ggsave(p.all.GGG, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/StrandInvasion_Mismatch.", suffix,".GGG.pdf"), dpi= 450, width = 10, height = 5)
 
 }
   
@@ -536,7 +536,7 @@ group4 <- c("SS3","SS3\nHagemann-J. et al",
 invasion.plot(group1, "group1")
 invasion.plot(group2, "group2")
 invasion.plot(c(group1, group2), "group3")
-invasion.plot(group4, "group4")
+invasion.plot(group = group4, suffix = "group4")
 
 
 # Seqlogo of the first adjacent bases
@@ -675,7 +675,7 @@ for(SUB in c("EXON - Concordant" ,  "EXON - Discordant",   "INTRON - Concordant"
   facet_wrap("SUBGROUP", scales = "free",  nrow = 2) + 
   theme_bw(base_size = 20) +
   theme(legend.position = "none", 
-        axis.text.x = element_text(size = 12, angle = 45, hjust = 1),
+        axis.text.x = element_text(size = 16, angle = 45, hjust = 1),
         legend.title = element_blank(),
         legend.text = element_text(size = 16),
         strip.background = element_blank(),
@@ -685,7 +685,7 @@ for(SUB in c("EXON - Concordant" ,  "EXON - Discordant",   "INTRON - Concordant"
   scale_y_continuous(breaks = scales, limits = lims) +
   ylab("5'UMI-Reads (%)") +
   xlab("") +
-  ggpubr::stat_pvalue_manual(filter(p.signif, SUBGROUP == SUB), label = "{p.adj.signif}",  step.increase = ifelse(SUB == "EXON - Concordant", 0.1, 0.032), tip.length = 0.01, size = 4) 
+  ggpubr::stat_pvalue_manual(filter(p.signif, SUBGROUP == SUB), label = "{p.adj.signif}",  step.increase = ifelse(SUB == "EXON - Concordant", 0.1, 0.032), tip.length = 0.01, size = 6) 
 }
 
 
