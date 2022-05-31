@@ -393,6 +393,52 @@ getFeatureCount <- function(paths = NULL, sample.ids = NULL, threads = 20, rowRa
   
 }
 
+#' getRSEMcounts
+#' 
+#' Read RSEM files in parallel. 
+#' Assumes that all the files have the same dimension (= same GTF).
+#' @param paths = vector of sample paths
+#' @param sample.ids = vector of sample ids
+#' @param threads = Number of threads for parallel processing (Only for reading).
+getRSEMcounts <- function(paths = NULL, sample.ids = NULL, threads = 20, rowRange = TRUE){
+  
+  if(!require(Rsamtools)){BiocManager::install("SingleCellExperiment")}
+  if(!require(data.table)){library("data.table")}
+  suppressPackageStartupMessages(library(tidyverse))
+  suppressPackageStartupMessages(library(doParallel))
+  if(threads >= detectCores()){stop("Requested too many cores")}
+  
+  # 1. Check if provided paths exist
+  trueFiles <- checkInputPath(paths, sample.ids)
+  paths <- trueFiles$paths
+  sample.ids <- trueFiles$sample.ids
+  
+  # 2. Read All Files in Parallel
+  message("1. Prepare for multi-threading")
+  geneID <- data.table::fread(paths[1], check.names = FALSE, header = FALSE, select = 1, skip = 1, sep = "\t")
+  
+  message("2. Read Files")
+  cl <- makeCluster(threads)
+  registerDoParallel(cl)
+  mycounts.all <- foreach(i = 1:length(paths)) %dopar% {
+    data.table::fread(paths[i], header = FALSE, check.names = FALSE, select = 6, skip = 1, sep = "\t")
+  }
+  stopCluster(cl)
+  
+  # 3. Regroup
+  message("3. Regroup data")
+  mycounts.all <- bind_cols(mycounts.all)
+  mycounts.all <- bind_cols(geneID$V1, mycounts.all)
+  colnames(mycounts.all) <- c("gene_id", sample.ids)
+  
+  # 4. Gene Info
+  # Collapse unique chr: Some genes are located on both chrY and chrX
+  sce <- SingleCellExperiment::SingleCellExperiment(assays = list(counts = data.frame(mycounts.all[,-1], row.names = mycounts.all$gene_id)))
+
+  return(sce)
+  
+}
+
 
 #' getUMICounts
 #' 

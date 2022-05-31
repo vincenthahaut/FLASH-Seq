@@ -288,6 +288,22 @@ ssce.10x <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS_10x.
 ggsave(DimPlot(ssce.10x, group.by = "cell_type", pt.size = 1.25) + scale_color_manual(values = celltype.colors()) + theme_void() + theme(legend.position = "none"), dpi = 450, width = 12, height = 8, bg = "white",
        file = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_dimplot.10x.celltype.void.pdf")
 
+
+p <- ssce.FS.all[["umap"]]@cell.embeddings %>%
+  as_tibble() %>%
+  mutate(GROUP = ssce.FS.all$cell_type) %>%
+  ggplot(aes(x = UMAP_1, y = UMAP_2, color = GROUP)) +
+  geom_point(alpha = 0.5) +
+  theme(legend.background = element_rect(fill = "transparent"),
+        legend.box.background = element_rect(fill = "transparent"),
+        panel.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text = element_blank(),
+        legend.position = "none",
+        plot.background = element_rect(fill = "transparent",
+                                       color = NA)) +
+  scale_color_manual(values = celltype.colors()) 
 ```
 
 
@@ -1073,14 +1089,186 @@ ggsave(plot_grid(p.diversity + ylab("Gene Diversity")  + theme(legend.position =
 
 ```
 
+```{r gene diversity - matching depth - poster, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
+
+### DIVERSITY
+
+# 1. Load Results
+ssce.FS.all <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.internal.ssce.rds")
+ssce.10x <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS_10x.processed.rds")
+
+ssce.FS.all.tmp <- ssce.FS.all[,ssce.FS.all$cell_type %in% c("Rods", "Müller Cells")]
+ssce.10x.tmp <- ssce.10x[,ssce.10x$cell_type %in% c("Rods", "Müller Cells")]
+
+# 2. Resample 10 cells 100 times in each cell type (10x / FS-UMI)
+# Get the number of genes detected in >2 cells
+set.seed(42)
+res <- data_frame()
+for(i in unique(ssce.FS.all.tmp$cell_type)){
+  print(i)
+  
+  index <- colnames(ssce.FS.all.tmp)[ssce.FS.all.tmp$cell_type == i]
+  if(any(ssce.10x$cell_type %in% i) & any(ssce.FS.all.tmp$cell_type %in% i)){
+    ssce.10x.tmp <- ssce.10x[,ssce.10x$cell_type == i]
+    c.ssce.FS.all.tmp <- ssce.FS.all.tmp[,colnames(ssce.FS.all.tmp) %in% index]
+
+    for(j in 1:100){
+        print(paste0(i, " : ", j))
+        set.seed(j)
+        index.1 <- sample(1:ncol(ssce.10x.tmp), size = 10, replace = FALSE)
+        index.2 <- sample(1:ncol(c.ssce.FS.all.tmp), size = 10, replace = FALSE)
+
+        sce.1 <- ssce.10x.tmp[,index.1]
+        sce.2 <- c.ssce.FS.all.tmp[,index.2]
+
+        res <- bind_rows(res,
+                  data_frame(
+                    times = j,
+                    cell_type = i,
+                    DROPLET = sum(rowSums(GetAssayData(sce.1, "counts") > 0) > 2),
+                    ALL = sum(rowSums(GetAssayData(sce.2, "counts") > 0) > 2))
+        )
+      }
+    }
+  }
+
+# 3. Aggregate results
+res <- res %>%
+  pivot_longer(cols = c("ALL", "DROPLET")) 
+
+
+# 4. Dunn's test
+p.signif.diversity <- res %>%
+  group_by(cell_type) %>%
+  rstatix::dunn_test(value ~ name) %>%
+  rstatix::add_y_position(fun = "max") %>%
+  filter(group1 == "DROPLET") %>%
+  filter(p.adj < 0.05) %>%
+  mutate(p.adj = p.adjust(p, method = "bonferroni"),
+         p.adj.signif = formatC(p.adj, format = "e", digits = 2)) 
+    
+p.diversity <- res %>%
+  ggplot() +
+  geom_violin(aes(x = name, fill = name, y = value)) +
+  geom_boxplot(aes(x = name, fill = name, y = value), width = 0.1, position = position_dodge(width = 0.9)) +
+  scale_y_continuous(seq(2000,8000,2000), labels = c("2,000", "4,000", "6,000", "8,000"), limits = c(0,9000), name = "Gene Diversity") + 
+  scale_fill_manual(values = c("ALL" = "#E41A1C",
+                               "DROPLET" = "#2ac7c2")) +
+  facet_wrap("cell_type", scales = "free_x", nrow = 2) +
+  theme_bw(base_size = 20) +
+  ylab("Gene Diversity") + xlab("") +
+  theme(legend.position = "none", 
+        legend.title = element_blank(), 
+        axis.ticks.x = element_blank(),
+        axis.text.x = element_blank()) 
+
+## Gene counts
+df <- bind_rows(
+  data_frame(count_0 = ssce.10x.tmp$nFeature_RNA,
+           cell_type = ssce.10x.tmp$cell_type,
+           TYPE = "DROPLET"),
+  data_frame(count_0 = ssce.FS.all.tmp$nFeature_RNA,
+             cell_type = ssce.FS.all.tmp$cell_type,
+             TYPE = "ALL")) 
+
+
+p.signif.detected <- df %>%
+  group_by(cell_type) %>%
+  rstatix::dunn_test(count_0 ~ TYPE) %>%
+  rstatix::add_y_position(fun = "max") %>%
+  filter(group1 == "DROPLET") %>%
+  filter(p.adj < 0.05) %>%
+  mutate(p.adj = p.adjust(p, method = "bonferroni"),
+         p.adj.signif = formatC(p.adj, format = "e", digits = 2)) 
+
+p.detected <- df %>%
+  ggplot() +
+  geom_violin(aes(x = TYPE, fill = TYPE, y = count_0)) +
+  geom_boxplot(aes(x = TYPE, fill = TYPE, y = count_0), width = 0.1, position = position_dodge(width = 0.9)) +
+  scale_fill_manual(values = c("ALL" = "#E41A1C",
+                               "DROPLET" = "#2ac7c2")) +
+  facet_wrap("cell_type", scales = "free_x", nrow = 2) +
+  scale_y_continuous(breaks = seq(0,8000,2000), labels = c("0", "2,000", "4,000", "6,000", "8,000"), limits = c(0,9000)) + 
+  theme_bw(base_size = 20) +
+  ylab("Gene Detected") + xlab("") +
+  theme(legend.position = "none", 
+        legend.title = element_blank(), 
+        axis.ticks.x = element_blank(),
+        axis.text.x = element_blank()) 
+
+ggsave(plot_grid(p.detected, p.diversity, ncol = 2), filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_diversity.downsample.poster.tiff",
+       dpi = 450, width = 12, height = 8, bg = "white")
+
+```
+
+```{r gene detected - matching depth, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
+
+# 1. Load Results
+ssce.FS.all <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.internal.ssce.rds")
+ssce.10x <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS_10x.processed.rds")
+c.FS.internal <- featurecounts.exon.down
+c.FS.umi <- umi.exon.down
+
+df <- bind_rows(
+  data_frame(count_0 = ssce.10x$nFeature_RNA,
+           cell_type = ssce.10x$cell_type,
+           TYPE = "DROPLET"),
+  data_frame(ID = paste0("X", colnames(c.FS.umi)),
+             count_0 = colSums(counts(c.FS.umi) > 0),
+             TYPE = "UMI") %>% 
+    right_join(dplyr::select(as.data.frame(ssce.FS.all@meta.data) %>% rownames_to_column("ID"), ID, cell_type) %>% mutate(ID = paste0(ID, "_33800"))),
+  data_frame(ID = colnames(c.FS.internal),
+             count_0 = colSums(counts(c.FS.internal) > 0),
+             TYPE = "INTERNAL") %>%
+    right_join(dplyr::select(as.data.frame(ssce.FS.all@meta.data) %>% rownames_to_column("ID"), ID, cell_type) %>% mutate(ID = paste0(ID, "_33800"))),
+) %>%
+    filter(!cell_type %in% c("Bipolar Fate", "Glia", "Proliferating Cells", "Amacrine/Horizontal Fate", "Apoptotic Cells", "Amacrine Fate"),
+           !is.na(TYPE))
+
+
+p.signif <- df %>%
+  group_by(cell_type) %>%
+  rstatix::dunn_test(count_0 ~ TYPE) %>%
+  rstatix::add_y_position(fun = "max") %>%
+  filter(group1 == "DROPLET") %>%
+  filter(p.adj < 0.05) %>%
+  mutate(p.adj = p.adjust(p, method = "bonferroni"),
+         p.adj.signif = formatC(p.adj, format = "e", digits = 2)) 
+
+p.detected <- df %>%
+  ggplot() +
+  geom_violin(aes(x = TYPE, fill = TYPE, y = count_0)) +
+  geom_boxplot(aes(x = TYPE, fill = TYPE, y = count_0), width = 0.1, position = position_dodge(width = 0.9)) +
+  ggpubr::stat_pvalue_manual(p.signif, label = "p = {p.adj.signif}", step.increase = 0.04, step.group.by = "cell_type", tip.length = 0.01, size = 5) +
+  scale_fill_manual(values = c("UMI" = "#E7298A", 
+                               "INTERNAL" = "#7570B3",
+                               "DROPLET" = "#2ac7c2")) +
+  facet_wrap("cell_type", scales = "free_x", nrow = 2) +
+  scale_y_continuous(breaks = seq(0,8000,2000), labels = c("0", "2,000", "4,000", "6,000", "8,000"), limits = c(0,8500)) + 
+  theme_bw(base_size = 20) +
+  ylab("Gene Detected") + xlab("") +
+  theme(legend.position = "none", 
+        legend.title = element_blank(), 
+        axis.ticks.x = element_blank(),
+        axis.text.x = element_blank()) 
+
+ggsave(p.detected, filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_detected.downsample.pdf",
+       dpi = 450, width = 16, height = 10, bg = "white")
+
+ggsave(plot_grid(p.diversity + ylab("Gene Diversity")  + theme(legend.position = "none"), 
+                 p.detected + ylab("Genes Detected") + theme(legend.position = "none"), nrow = 2), filename = "/home/vincent.hahaut/data_storage/ORGANOIDS/FIGURES/ORGANOIDS_detected_diversity.downsample.pdf",
+       dpi = 450, width = 16, height = 10, bg = "white")
+
+```
 
 ```{r number of detected genes, eval = FALSE, echo = F, include = F, warning = FALSE, comment = F, message = F, cache = FALSE}
 
 # 1. Load Data
-  ssce.FS.umi <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.umi.ssce.rds")
-  ssce.FS.internal <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.internal.ssce.rds")
-  ssce.FS.10x <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS_10x.processed.rds")
-  ssce.FS.all <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.all.ssce.rds")
+ssce.FS.umi <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.umi.ssce.rds")
+ssce.FS.internal <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.internal.ssce.rds")
+ssce.FS.10x <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS_10x.processed.rds")
+ssce.FS.all <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS.all.ssce.rds")
+ssce.10x <- read_rds("/home/vincent.hahaut/data_storage/ORGANOIDS/ORGANOIDS_10x.processed.rds")
 
 # 2. Aggregate results
 # Get gene/isoform counts at three thresholds
@@ -1091,9 +1279,9 @@ med.10x <- data_frame(ID = colnames(ssce.10x),
                       cell_type.10x = ssce.10x$cell_type)
 
 med.salmon <- data_frame(ID = colnames(salmon.all),
-                      count_0.salmon = colSums(SingleCellExperiment::assay(salmon.all, "abundance") > 0), 
-                      count_1.salmon = colSums(SingleCellExperiment::assay(salmon.all, "abundance") > 1), 
-                      count_5.salmon = colSums(SingleCellExperiment::assay(salmon.all, "abundance") > 5))
+                      count_0.salmon = colSums(SummarizedExperiment::assay(salmon.all, "abundance") > 0), 
+                      count_1.salmon = colSums(SummarizedExperiment::assay(salmon.all, "abundance") > 1), 
+                      count_5.salmon = colSums(SummarizedExperiment::assay(salmon.all, "abundance") > 5))
 
 med.internal <- data_frame(ID = str_replace(colnames(ssce.FS.internal), "X", ""),
                            count_0.internal = colSums(GetAssayData(object = ssce.FS.internal, slot = "counts") > 0), 

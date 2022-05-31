@@ -581,6 +581,67 @@ ggsave(
   dpi = 450, height = 8, width = 12)
 ```
 
+```{r poster Genes - downsamplings , echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
+
+# 1. Read number of detected genes per sample
+df.umi <- read_tsv("/home/vincent.hahaut/data_storage/FS_intermediate_file/UMI.txt") %>% dplyr::select(-MOLECULES)
+df.internal <- read_tsv("/home/vincent.hahaut/data_storage/FS_intermediate_file/ALL.txt") %>%
+  filter(TYPE == "INTERNAL")
+colnames(df.umi) <- colnames(df.internal)
+
+# 2. Aggregate counts
+df.counts <- bind_rows(df.umi, df.internal) %>%
+  mutate(GROUP = case_when(
+    grepl("5_SS3|6_SS3", ID) ~ "SS3",
+    grepl("SS3fwd", ID) ~ "SS3\ndata from\nHagemann-J. et al",
+    grepl("STRToligoT_Spacer2", ID) ~ "TSO-ATAAC\nSTRT-dT",
+    grepl("STRToligoT_Spacer1", ID) ~ "TSO-CAGCA\nSTRT-dT",
+    grepl("SS3-CGTAC", ID) ~ "SS3-CGTAC\nFS-dT",
+    grepl("311_CTAAC", ID) ~ "TSO-CTAAC\nFS-dT",
+    grepl("STRToligoT_Fstso", ID) ~ "TSO-FS-UMI\nSTRT-dT",
+    grepl("AAGCA", ID) ~ "TSO-AAGCA\nSTRT-dT",
+    grepl("CATCA", ID) ~ "TSO-CATCA\nSTRT-dT",
+    grepl("CTGAC", ID) ~ "TSO-CTGAC\nSTRT-dT",
+    grepl("ATGAC", ID) ~ "TSO-ATGAC\nSTRT-dT",
+    grepl("CTAAC", ID) ~ "TSO-CTAAC\nSTRT-dT",
+    grepl("FSoligoT_Spacer2", ID) ~ "TSO-ATAAC\nFS-dT",
+    grepl("FSoligoT_Spacer1", ID) ~ "TSO-CAGCA\nFS-dT",
+    grepl("FSoligoT_FStso", ID) ~ "TSO-FS-UMI\nFS-dT",
+    grepl("SS3oligoT_Spacer1", ID) ~ "TSO-CAGCA\nSS3-dT",
+    grepl("276_LA", ID) ~ "LA-TSO-CAGCA\nSTRT-dT",
+    grepl("SS3oligoT_Fstso", ID) ~ "TSO-FS-UMI\nSS3-dT"))  %>%
+  filter(GROUP %in% c("SS3\ndata from\nHagemann-J. et al", "TSO-CTAAC\nSTRT-dT"),
+         DOWN == 125000)
+
+p.signif <- df.counts %>%
+  group_by(TYPE) %>%
+  rstatix::wilcox_test(count.0.exon ~ GROUP) %>%
+  ungroup() %>%
+  rstatix::adjust_pvalue(method = "bonferroni") %>%
+  rstatix::add_xy_position(fun = "max", scales = "free_y") %>%
+  mutate(p.adj.signif = paste0("p=",formatC(p.adj, format = "e", digits = 2)),
+         p.adj.signif = ifelse(p.adj < 0.05, p.adj.signif, "p>0.05"))
+
+p.genes.poster <- ggplot() +
+  geom_violin(data = df.counts, aes(x = GROUP, y = count.0.exon, fill = GROUP)) +
+  geom_boxplot(data = df.counts, aes(x = GROUP, y = count.0.exon, fill = GROUP), width = 0.1) +
+  facet_wrap("TYPE") + 
+  theme_bw(base_size = 24) +
+  theme(legend.position = "none") + 
+  xlab("") + 
+  scale_y_continuous(breaks = seq(0,11000, 2500), limits = c(0,11000)) +
+  ylab("Genes Detected") +
+  scale_fill_manual(values = c("TSO-CTAAC\nSTRT-dT" = "#E41A1C",
+                               "SS3\ndata from\nHagemann-J. et al" = "#4DAF4A")) +
+    ggpubr::stat_pvalue_manual(p.signif, label = "{p.adj.signif}", step.group.by = "TYPE", tip.length = 0.01, size = 5) 
+
+
+# 7. Save results
+ggsave(p.genes.poster, bg = "white",
+  filename = "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/HEK_downsampling_UMI_internal.tiff",
+  dpi = 450, height = 6, width = 10)
+```
+
 ```{r Molecules , echo = FALSE, include = TRUE, warning = FALSE, comment = FALSE, message = FALSE, cache = FALSE}
 
 # 1. Read number of detected genes per sample

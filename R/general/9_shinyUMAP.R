@@ -5,6 +5,7 @@
 #' @param seurat.rds Seurat Object containing UMAP info
 #' @param mymarkers, optional - FindAllMarkers results
 #' @param prefix, optional - sample ID
+#' @param gene.description, optional - if available will add a short gene description to the markers table. DF V1 = gene_name V2 = description
 #' @param OUTPUT
 #'
 #' @author Vincent Hahaut
@@ -13,7 +14,7 @@
 #' 
 #' @export
 
-shinyUMAP <- function(seurat.rds = NULL, mymarkers = NULL, prefix = "mySample", OUTPUT = "~/Desktop/screenshots/"){
+shinyUMAP <- function(seurat.rds = NULL, mymarkers = NULL, prefix = "mySample", OUTPUT = "~/Desktop/screenshots/", gene.description = NULL){
   
   print("0. Load Packages")
   
@@ -140,17 +141,33 @@ shinyUMAP <- function(seurat.rds = NULL, mymarkers = NULL, prefix = "mySample", 
       })
    
     # Cluster Marker Table
-    output$markerTable <- DT::renderDT(mymarkersTable %>%
-                                         select(gene, avg_log2FC, cluster, p_val, p_val_adj) %>% 
-                                         mutate(cluster = as.character(cluster),
-                                                p_val = as.numeric(round(p_val, 6)),
-                                                p_val_adj = as.numeric(round(p_val, 6)),
-                                                avg_log2FC = as.numeric(round(avg_log2FC, 3))),
-                                       class = "display nowrap compact",
-                                       filter = "top",
-                                       options = list(scrollX = TRUE,
-                                                      search = list(regex = TRUE, caseInsensitive = FALSE)
-                                       ))
+    if(!is.null(gene.description)){
+      output$markerTable <- DT::renderDT(mymarkersTable %>%
+                                           left_join(gene.description, by = c("gene" =  "V1")) %>%
+                                           dplyr::select(gene, avg_log2FC, cluster, p_val, p_val_adj, V2) %>% 
+                                           mutate(cluster = as.character(cluster),
+                                                  p_val = as.numeric(round(p_val, 6)),
+                                                  p_val_adj = as.numeric(round(p_val, 6)),
+                                                  avg_log2FC = as.numeric(round(avg_log2FC, 3))),
+                                         class = "display nowrap compact",
+                                         filter = "top",
+                                         options = list(scrollX = TRUE,
+                                                        search = list(regex = TRUE, caseInsensitive = FALSE)
+                                         ))
+      
+    } else {
+      output$markerTable <- DT::renderDT(mymarkersTable %>%
+                                           select(gene, avg_log2FC, cluster, p_val, p_val_adj) %>% 
+                                           mutate(cluster = as.character(cluster),
+                                                  p_val = as.numeric(round(p_val, 6)),
+                                                  p_val_adj = as.numeric(round(p_val, 6)),
+                                                  avg_log2FC = as.numeric(round(avg_log2FC, 3))),
+                                         class = "display nowrap compact",
+                                         filter = "top",
+                                         options = list(scrollX = TRUE,
+                                                        search = list(regex = TRUE, caseInsensitive = FALSE)
+                                         ))
+    }
     
     print("Good to Go!")
     }

@@ -27,6 +27,8 @@ seqPaths <- c(
   "/home/vincent.hahaut/data_storage/211112_NB551561_0070_AHMHYYBGXK/STAR_SINGLE/",
   "/home/vincent.hahaut/data_storage/220304_NB551561_0086_AHKCVLBGXL/STAR/",
   "/home/vincent.hahaut/data_storage/220303_NB551561_0085_AHK7WTBGXL/STAR/",
+  "/home/vincent.hahaut/data_storage/220414_NB551561_0090_AHLKF3BGXL/STAR/",
+  "/home/vincent.hahaut/data_storage/220426_NB551561_0091_AHT557BGXL/STAR/",
   "/home/vincent.hahaut/data_storage/211202_NB551561_0072_AH3YYHBGXK/STAR/"
 )
 
@@ -53,6 +55,11 @@ paths.ReSQC.distr <- makePath(seqPaths = seqPaths, suffix = "ReSQC/ID_readDistri
 ReSQC.distr <- getRESeQC_readDistribution(paths = paths.ReSQC.distr$paths, sample.ids = paths.ReSQC.distr$sample.ids, threads = 10)
 write_rds(ReSQC.distr, file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/ReSQC.distribution.", mydate, ".rds.bz"), compress = "bz")
 
+# Chromosome read distribution
+paths.chr.distr <- makePath(seqPaths = seqPaths, suffix = "STAR/ID_Aligned.sortedByCoord.filtered.bam")
+chr <- getReadsPerChr(paths = paths.chr.distr$paths, sample.ids = paths.chr.distr$sample.ids, threads = 10)
+write_rds(chr, file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/chr.distribution.", mydate, ".rds.bz"), compress = "bz")
+
 # 7. ReadCounts
 
 # 7.1. ALL - GENES
@@ -69,6 +76,11 @@ write_rds(featurecounts.exonintron, file = paste0("/home/vincent.hahaut/data_sto
 paths.featurecounts <- makePath(seqPaths = seqPaths, suffix = "FEATURECOUNTS/ID_ReadCount.featureCounts.gencode.txt")
 featurecounts.exon <- getFeatureCount(paths = paths.featurecounts$paths, sample.ids = paths.featurecounts$sample.ids, threads = 30)
 write_rds(featurecounts.exon, file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/featureCounts.exons.all.", mydate, ".rds.bz"), compress = "bz")
+
+# Isoforms
+paths.RSEM.distr <- makePath(seqPaths = seqPaths, suffix = "RSEM/ID.isoforms.results")
+RSEM.distr <- getRSEMcounts(paths = paths.RSEM.distr$paths, sample.ids = paths.RSEM.distr$sample.ids, threads = 10)
+write_rds(RSEM.distr, file = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/RSEM.", mydate, ".rds.bz"), compress = "bz")
 
 # 8. Downsampling
 
@@ -130,3 +142,7 @@ sce <- read_rds(paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/s
 med <- sceToExpressedGenes(sce, thresholds = c(0,1,5,10,20,50), salmon = TRUE)
 write_rds(med, paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/downsampling_medianGenes_salmon.all.125000.", mydate, ".rds.bz"))
 
+# 11.3. 125K
+sce <- read_rds(paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/RSEM.", mydate, ".rds.bz"))
+med <- sceToExpressedGenes(sce, thresholds = c(0,1,5,10), salmon = FALSE)
+write_rds(med, paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/downsampling_medianGenes_RSEM.", mydate, ".rds.bz"))

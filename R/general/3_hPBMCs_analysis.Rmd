@@ -1257,7 +1257,7 @@ p.LA.genes <- mydata %>%
   ungroup() %>%
   filter(predicted.celltype.l2 %in% c("B naive","CD14 Mono","CD16 Mono","CD4 Naive","CD4 TCM","CD8 Naive","CD8 TEM","cDC2","pDC","NK","gdT","MAIT"),
          n > 2) %>%
-  mutate(predicted.celltype.l2 = ifelse(predicted.celltype.l2 == "CD8 TEM", paste0(predicted.celltype.l2, " (*)"), paste0(predicted.celltype.l2, " (ns)"))) %>%
+  mutate(predicted.celltype.l2 =  paste0(predicted.celltype.l2, " (ns)")) %>%
   ggplot(aes(x = as.numeric(as.character(DEPTH)), color = NAME))  +
   geom_hline(yintercept = seq(1000,6000,1000), linetype = "dashed", color = "darkgrey") +
   geom_point(aes(y = m), alpha = 0.75) +

@@ -421,39 +421,13 @@ dat <- res.annotated.final %>%
 
 # 2. Graphics Functions
 invasion.plot <- function(group, suffix = "group1"){
-    p.perfect <- ggplot(filter(dat, mismatchN == 0, GROUP %in% group), aes(x = GROUP, fill = GROUP, y = percentage)) + 
-    geom_hline(yintercept = seq(0,7.5,1), linetype = "dashed", color = "darkgrey") +
-    geom_boxplot(width = 0.75) +
-    theme_bw(base_size = 21, base_family = "arial") +
-    facet_wrap(~SUBGROUPS, ncol = 2, scales = "free_x") +
-    scale_fill_manual(values = c("SS3" = "#e6194B",
-  "TSO-ATAAC\nSTRT-dT"= "#3cb44b",
-  "TSO-CAGCA\nSTRT-dT"= "#ffe119",
-  "TSO-FS-UMI\nSTRT-dT"= "#4363d8",
-  "TSO-ATAAC\nFS-dT"= "#f58231",
-  "TSO-CAGCA\nFS-dT"= "#42d4f4",
-  "TSO-FS-UMI\nFS-dT"= "#f032e6",
-  "TSO-CAGCA\nSS3-dT"= "#fabed4",
-  "TSO-FS-UMI\nSS3-dT"= "#469990",
-  "SS3\nHagemann-J. et al" = "#dcbeff",
-  "zUMIs - SS3\nHagemann-J." = "#B3B3B3",
-  "TSO-AAGCA\nSTRT-dT" = '#9A6324',
-  "TSO-CATCA\nSTRT-dT" ='#bfef45',
-  "TSO-CTGAC\nSTRT-dT" = '#800000',
-  "TSO-ATGAC\nSTRT-dT" ='#000075',
-  "TSO-CTAAC\nSTRT-dT" = '#808000')) +
-    ylab("% UMI-Upstream Sequence Match") +
-    xlab("") +
-    theme(legend.position = "none",
-          axis.text.y = element_text(size = 20),
-          axis.text.x = element_text(size = 13, angle = 45, hjust = 1))
-  
+
     
   p.all.dat <- dat %>%
     filter(mismatchN < 4, GROUP %in% group) %>% 
   group_by(mismatchN, GGG, GROUP, SUBGROUPS, facet) %>%
   summarise(m = mean(percentage),
-            s = sd(percentage))
+            s = sd(percentage)) 
   
     
            
@@ -472,13 +446,13 @@ invasion.plot <- function(group, suffix = "group1"){
   "TSO-FS-UMI\nFS-dT"= "#f032e6",
   "TSO-CAGCA\nSS3-dT"= "#fabed4",
   "TSO-FS-UMI\nSS3-dT"= "#469990",
-  "SS3\nHagemann-J. et al" = "#dcbeff",
+  "SS3\nHagemann-J. et al" = "#4DAF4A",
   "zUMIs - SS3\nHagemann-J. et al" = "#B3B3B3",
   "TSO-AAGCA\nSTRT-dT" = '#9A6324',
   "TSO-CATCA\nSTRT-dT" ='#bfef45',
   "TSO-CTGAC\nSTRT-dT" = '#800000',
   "TSO-ATGAC\nSTRT-dT" ='#000075',
-  "TSO-CTAAC\nSTRT-dT" = '#808000')) +
+  "TSO-CTAAC\nSTRT-dT" = '#E41A1C')) +
     theme_bw(base_size = 28) +
     theme(legend.position = "none",
           legend.title = element_blank(),
@@ -503,13 +477,13 @@ invasion.plot <- function(group, suffix = "group1"){
   "TSO-FS-UMI\nFS-dT"= "#f032e6",
   "TSO-CAGCA\nSS3-dT"= "#fabed4",
   "TSO-FS-UMI\nSS3-dT"= "#469990",
-  "SS3\nHagemann-J. et al" = "#dcbeff",
-  "zUMIs - SS3\nHagemann-J. et" = "#B3B3B3",
+  "SS3\nHagemann-J. et al" = "#4DAF4A",
+  "zUMIs - SS3\nHagemann-J. et" = "#4DAF4A",
   "TSO-AAGCA\nSTRT-dT" = '#9A6324',
   "TSO-CATCA\nSTRT-dT" ='#bfef45',
   "TSO-CTGAC\nSTRT-dT" = '#800000',
   "TSO-ATGAC\nSTRT-dT" ='#000075',
-  "TSO-CTAAC\nSTRT-dT" = '#808000',
+  "TSO-CTAAC\nSTRT-dT" = '#E41A1C',
   "LA-TSO-CAGCA\nSTRT-dT" = "#dcbeff")) +
     theme_bw(base_size = 28) +
     theme(legend.position = "none",
@@ -519,9 +493,10 @@ invasion.plot <- function(group, suffix = "group1"){
     xlab("Number of Consecutive 5' Mismatches in UMI") + 
     ylab("Match Upstream\nSequence (%)") 
 
-  ggsave(p.perfect, filename = paste0( "/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/StrandInvasion_Perfect.", suffix,".pdf"), dpi= 450, height = 5.4*length(unique(filter(dat,GROUP %in% group)$SUBGROUPS)), width = 12)
   ggsave(p.all, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/StrandInvasion_Mismatch.", suffix,".pdf"), dpi= 450, width = 10, height = 5)
   ggsave(p.all.GGG, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/StrandInvasion_Mismatch.", suffix,".GGG.pdf"), dpi= 450, width = 10, height = 5)
+  ggsave(p.all, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/StrandInvasion_Mismatch.", suffix,".tiff"), dpi= 450, width = 10, height = 5)
+  ggsave(p.all.GGG, filename = paste0("/home/vincent.hahaut/data_storage/FS_intermediate_file/FIGURES/StrandInvasion_Mismatch.", suffix,".GGG.tiff"), dpi= 450, width = 10, height = 5)
 
 }
   
@@ -532,11 +507,13 @@ group2 <- c("TSO-ATAAC\nFS-dT","TSO-CAGCA\nFS-dT","TSO-FS-UMI\nFS-dT","TSO-CAGCA
 group4 <- c("SS3","SS3\nHagemann-J. et al",
             "TSO-CAGCA\nSTRT-dT","TSO-CTAAC\nSTRT-dT",
             "TSO-FS-UMI\nSTRT-dT","TSO-FS-UMI\nFS-dT")
+group5 <- c("SS3\nHagemann-J. et al", "TSO-CTAAC\nSTRT-dT")
 
 invasion.plot(group1, "group1")
 invasion.plot(group2, "group2")
 invasion.plot(c(group1, group2), "group3")
 invasion.plot(group = group4, suffix = "group4")
+invasion.plot(group = group5, suffix = "group5")
 
 
 # Seqlogo of the first adjacent bases
